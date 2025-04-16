@@ -1,0 +1,23 @@
+# Specify the base image
+FROM node:22.2.0
+
+# Install development dependencies and tools
+RUN npm install -g nodemon
+
+# Install Docker using Docker's convenience script
+RUN apt-get update && \
+    apt-get install -y \
+    apt-transport-https \
+    ca-certificates \
+    curl \
+    gnupg2 \
+    lsb-release && \
+    curl -fsSL https://get.docker.com -o get-docker.sh && \
+    sh get-docker.sh && \
+    rm get-docker.sh
+
+# Add user to the Docker group if the group exists, otherwise create the group and add the user
+RUN if getent group docker; then usermod -aG docker node; else groupadd docker && usermod -aG docker node; fi
+
+# Install Azure CLI
+RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash

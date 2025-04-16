@@ -1,0 +1,23 @@
+{
+    "name": "lh-infra-nodelab",
+    "dockerFile": "Dockerfile.dev",
+    "customizations": {
+      "vscode": {
+        "settings": {
+          "terminal.integrated.shell.linux": "/bin/sh"
+        },
+        "extensions": [
+          "dbaeumer.vscode-eslint",
+          "esbenp.prettier-vscode"
+        ]
+      }
+    },
+    "postCreateCommand": "npm install && npm start",
+    "runArgs": ["--privileged"],
+    "mounts": [
+      "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+    ],
+    "remoteEnv": {
+      "DOCKER_HOST": "unix:///var/run/docker.sock"
+    }
+  }
