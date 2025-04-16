@@ -12,6 +12,7 @@
   "description": "",
   "dependencies": {
     "@neondatabase/serverless": "^1.0.0",
+    "bcrypt": "^5.1.1",
     "compression": "^1.8.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -23,6 +24,7 @@
     "morgan": "^1.10.0",
     "nodemon": "^3.1.9",
     "pg": "^8.14.1",
-    "smile-identity-core": "^3.1.0"
+    "smile-identity-core": "^3.1.0",
+    "uuid": "^11.1.0"
   }
 }
