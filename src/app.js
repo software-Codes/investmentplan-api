@@ -1,5 +1,5 @@
 // src/app.js
-require("dotenv").config();                      // 1. Load .env into process.env
+require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
@@ -7,80 +7,95 @@ const helmet = require("helmet");
 const compression = require("compression");
 const session = require("express-session");
 const cookieParser = require("cookie-parser");
-const database = require("./authentication/src/Config/neon-database");
 const crypto = require("crypto");
+const database = require("./authentication/src/Config/neon-database");
+const setupDatabase = require("./authentication/src/Config/setupDatabase");
 
 /**
- * Validate that all required env vars are set, or provide safe defaults.
- * Single responsibility: environment validation. :contentReference[oaicite:2]{index=2}
+ * Validate required environment variables with safe defaults
  */
 function validateEnv() {
-  // JWT_SECRET: use provided, or auto‑generate a strong random one in dev
   if (!process.env.JWT_SECRET) {
     if (process.env.NODE_ENV === "production") {
       throw new Error("Missing required env var: JWT_SECRET");
     }
-    console.warn(
-      "[WARN] JWT_SECRET not set—auto‑generating a development secret."
-    );
+    console.warn("[WARN] JWT_SECRET not set - generating development secret");
     process.env.JWT_SECRET = crypto.randomBytes(64).toString("hex");
   }
 
-  // CORS_ORIGIN: default to localhost:3000
   if (!process.env.CORS_ORIGIN) {
-    console.warn(
-      "[WARN] CORS_ORIGIN not set—defaulting to http://localhost:3000"
-    );
+    console.warn("[WARN] CORS_ORIGIN not set - defaulting to localhost:3000");
     process.env.CORS_ORIGIN = "http://localhost:3000";
   }
 }
 
 /**
- * Build and return an Express app + HTTP server.
+ * Create and configure Express application
  */
 const createApp = () => {
   const app = express();
   const server = http.createServer(app);
 
+  // src/app.js (updated listRoutes function)
   /**
-   * List all registered routes (path + methods).
-   * Safely checks for layer.handle.stack to avoid undefined errors. :contentReference[oaicite:3]{index=3}
+   * List all registered routes with enhanced safety checks
    */
   function listRoutes() {
     const routes = [];
+
+    // Check if router stack exists
+    if (!app._router || !Array.isArray(app._router.stack)) {
+      console.warn("[WARN] Router stack not initialized");
+      return routes;
+    }
+
     app._router.stack.forEach((layer) => {
-      // Directly registered routes
+      if (!layer) return;
+
+      // Handle direct routes
       if (layer.route) {
-        const methods = Object.keys(layer.route.methods)
-          .map((m) => m.toUpperCase());
-        routes.push({ path: layer.route.path, methods });
+        try {
+          const methods = Object.keys(layer.route.methods).map((m) =>
+            m.toUpperCase()
+          );
+          routes.push({
+            path: layer.route.path,
+            methods,
+          });
+        } catch (error) {
+          console.error("[ERROR] Error processing route layer:", error);
+        }
       }
-      // Router‑mounted routes
-      else if (
-        layer.name === "router" &&
-        layer.handle &&
-        Array.isArray(layer.handle.stack)
-      ) {
-        layer.handle.stack.forEach((handler) => {
-          if (handler.route) {
-            const methods = Object.keys(handler.route.methods)
-              .map((m) => m.toUpperCase());
-            routes.push({ path: handler.route.path, methods });
+      // Handle router-mounted routes
+      else if (layer.name === "router" && layer.handle) {
+        try {
+          const router = layer.handle;
+          if (router.stack && Array.isArray(router.stack)) {
+            router.stack.forEach((handler) => {
+              if (handler && handler.route) {
+                const methods = Object.keys(handler.route.methods).map((m) =>
+                  m.toUpperCase()
+                );
+                routes.push({
+                  path: handler.route.path,
+                  methods,
+                });
+              }
+            });
           }
-        });
+        } catch (error) {
+          console.error("[ERROR] Error processing router layer:", error);
+        }
       }
     });
+
     return routes;
   }
-
   /**
-   * Set up all middleware in small, focused functions.
+   * Configure application middleware
    */
   function setupMiddleware() {
-    // Parse cookies
     app.use(cookieParser());
-
-    // Session management (uses JWT_SECRET)
     app.use(
       session({
         secret: process.env.JWT_SECRET,
@@ -93,8 +108,6 @@ const createApp = () => {
         },
       })
     );
-
-    // CORS with credentials
     app.use(
       cors({
         origin: process.env.CORS_ORIGIN,
@@ -104,18 +117,11 @@ const createApp = () => {
         maxAge: 86400,
       })
     );
-
-    // Standard security headers
     app.use(helmet());
-
-    // Gzip compression
     app.use(compression());
-
-    // Body parsing
     app.use(express.json({ limit: "10mb" }));
     app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-    // Request logging in dev
     if (process.env.NODE_ENV === "development") {
       const morgan = require("morgan");
       app.use(morgan("dev"));
@@ -123,36 +129,33 @@ const createApp = () => {
   }
 
   /**
-   * Define all application routes.
+   * Register application routes
    */
   function setupRoutes() {
-    // Health check
     app.get("/health", (req, res) =>
-      res.json({ status: "healthy", timestamp: new Date().toISOString() })
+      res.json({
+        status: "healthy",
+        timestamp: new Date().toISOString(),
+      })
     );
 
-    // List all routes (with methods)
     app.get("/", (req, res) => {
       res.json({ availableRoutes: listRoutes() });
     });
-
-    // ... mount other routers here, e.g.:
-    // app.use("/auth", require("./authentication/routes"));
   }
 
   /**
-   * 404 handler for any unmatched routes.
+   * Handle 404 errors
    */
   function notFoundHandler(req, res) {
     res.status(404).json({ error: "Not Found" });
   }
 
   /**
-   * Centralized error handler.
+   * Central error handler
    */
   function errorHandler(err, req, res, next) {
     console.error("[ERROR]", err);
-    // Customize based on error type, e.g. JWT auth failures
     if (err.name === "UnauthorizedError") {
       return res.status(401).json({ error: "Invalid token" });
     }
@@ -160,26 +163,45 @@ const createApp = () => {
   }
 
   /**
-   * Initialize: validate env, connect DB, wire up middleware & routes.
+   * Initialize application components
    */
   async function initialize() {
-    validateEnv();
+    try {
+      // Validate environment variables
+      validateEnv();
 
-    // Ensure DB is reachable
-    await database.checkDatabaseConnection();
+      // Database initialization
+      console.log("\n[Database] Initializing database schema...");
+      // await setupDatabase();
+      console.log("[Database] Schema initialized successfully");
 
-    setupMiddleware();
-    setupRoutes();
+      // Establish database connection
+      await database.checkDatabaseConnection();
+      console.log("[Database] Connection verified\n");
 
-    // 404 → then error handler
-    app.use(notFoundHandler);
-    app.use(errorHandler);
+      // Configure application
+      setupMiddleware();
+      setupRoutes();
 
-    if (process.env.NODE_ENV === "development") {
-      console.log("[INFO] Application initialized successfully");
+      // Error handling
+      app.use(notFoundHandler);
+      app.use(errorHandler);
+
+      // Development logging
+      if (process.env.NODE_ENV === "development") {
+        console.log("[Application] Available routes:");
+        listRoutes().forEach((route) => {
+          console.log(`  ${route.methods.join(", ").padEnd(15)} ${route.path}`);
+        });
+        console.log("");
+      }
+
+      return app;
+    } catch (error) {
+      console.error("\n[FATAL] Application initialization failed:");
+      console.error(error.stack);
+      process.exit(1);
     }
-
-    return app;
   }
 
   return { app, server, initialize };
