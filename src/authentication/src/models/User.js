@@ -1,0 +1,1 @@
+// # Users table schema

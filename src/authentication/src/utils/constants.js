@@ -1,0 +1,1 @@
+// # Enums (e.g., KYC_STATUS, OTP_CHANNEL) for creating tables for different    

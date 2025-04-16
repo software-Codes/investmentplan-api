@@ -1,0 +1,124 @@
+# ----------------------------------
+# Node.js
+# ----------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+.pnpm-debug.log
+
+# dotenv environment variables
+# .env
+.env.*.local
+.env.local
+
+# ----------------------------------
+# Logs
+# ----------------------------------
+logs
+*.log
+*.log.*
+log/
+*.out
+*.pid
+*.seed
+*.pid.lock
+pids/
+npm-debug.log*
+
+# ----------------------------------
+# Build output
+# ----------------------------------
+dist/
+build/
+.tmp/
+temp/
+.cache/
+coverage/
+.nyc_output/
+lib-cov/
+
+# ----------------------------------
+# Operating System
+# ----------------------------------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+Desktop.ini
+
+# ----------------------------------
+# Editor-specific
+# ----------------------------------
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+*.code-workspace
+
+# ----------------------------------
+# Test related
+# ----------------------------------
+coverage/
+.nyc_output/
+test_output/
+junit.xml
+
+# ----------------------------------
+# PM2 (Process Manager)
+# ----------------------------------
+pids/
+*.pid
+*.seed
+*.pid.lock
+pm2.log
+.pm2/
+
+# ----------------------------------
+# Binaries
+# ----------------------------------
+*.exe
+*.dll
+*.so
+*.dylib
+*.bin
+
+# ----------------------------------
+# TypeScript
+# ----------------------------------
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+dist/
+build/
+out/
+
+# ----------------------------------
+# ESLint / Prettier cache
+# ----------------------------------
+.eslintcache
+.prettiercache
+
+# ----------------------------------
+# Security
+# ----------------------------------
+*.pem
+*.key
+*.crt
+*.cert
+
+# ----------------------------------
+# Misc
+# ----------------------------------
+*.swp
+*.swo
+*.bak
+*.orig
+*.rej
+
+# Docker
+.docker/
+docker-compose.override.yml
+*.tar
