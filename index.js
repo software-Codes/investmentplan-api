@@ -1,14 +1,41 @@
-const express = require("express")
-const app = express()
+/**
+ * @file index.js
+ * @description Entry point for the application. This file initializes the server and handles global error events.
+ */
 
-const PORT = 3000
+const createApp = require('./src/app')
+const dotenv = require('dotenv');
 
-app.get('/', (req, res) =>
-{
-    res.send('hello world')
-})
+// Load environment variables
+dotenv.config();
+// Set the port for the server. Default is 3000 if not specified in the environment variables.
+const PORT = process.env.PORT || 3000;
 
+const startServer = async () => {
+    try {
+      const { app, server, initialize } = createApp();
+      await initialize();
+  
+      server.listen(PORT, () => {
+        console.log(`Server is running successsfully on http://localhost:${PORT}`);
+  
+      });
+    } catch (error) {
+      console.error('Failed to start server:', error);
+      process.exit(1);
+    }
+  };
 
-app.listen(PORT, () => {
-    console.log(`Example app is running on port ${PORT}`)
-})
+// Handle uncaught exceptions to prevent the application from crashing unexpectedly.
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err);
+  process.exit(1); // Exit the process with a failure code.
+});
+
+// Handle unhandled promise rejections to ensure proper error handling.
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled rejection at:", promise, "reason:", reason);
+  process.exit(1); // Exit the process with a failure code.
+});
+
+startServer();
