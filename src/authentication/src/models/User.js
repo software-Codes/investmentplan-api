@@ -484,4 +484,359 @@ class User {
     const res = await query(queryText, [userId]);
     return res.rows[0] || null;
   }
+  /**
+   * Submits or updates KYC (Know Your Customer) documents for a user.
+   * If a document already exists for the user, it updates the existing record.
+   * 
+   * @param {string} userId - The unique ID of the user.
+   * @param {Object} documentData - The data for the KYC document.
+   * @param {string} documentData.documentType - The type of the document (e.g., "passport", "national_id").
+   * @param {string} documentData.documentNumber - The document number.
+   * @param {string} documentData.documentCountry - The country of issuance for the document.
+   * @param {string} documentData.blobStoragePath - The storage path of the document in the blob storage.
+   * @returns {Promise<void>} Resolves when the document is successfully submitted or updated.
+   * @throws {Error} Throws an error if the database operation fails.
+   */
+  static async submitDocuments(userId, documentData) {
+    // Generate a unique ID for the document
+    const documentId = uuidv4();
+
+    // Get the current timestamp
+    const currentDate = new Date().toISOString();
+
+    // SQL query to insert or update the KYC document
+    const queryText = `
+    INSERT INTO kyc_documents (
+      document_id,
+      user_id,
+      document_type,
+      document_number,
+      document_country,
+      blob_storage_path,
+      verification_status,
+      uploaded_at,
+      created_at,
+      updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    ON CONFLICT (user_id) DO UPDATE
+    SET 
+      document_type = EXCLUDED.document_type,
+      document_number = EXCLUDED.document_number,
+      document_country = EXCLUDED.document_country,
+      blob_storage_path = EXCLUDED.blob_storage_path,
+      verification_status = EXCLUDED.verification_status,
+      updated_at = EXCLUDED.updated_at;
+  `;
+
+    // Execute the query with the provided data
+    await query(queryText, [
+      documentId, // Unique ID for the document
+      userId, // User ID associated with the document
+      documentData.documentType, // Type of the document
+      documentData.documentNumber, // Document number
+      documentData.documentCountry, // Country of issuance
+      documentData.blobStoragePath, // Path to the document in blob storage
+      'pending', // Default verification status
+      currentDate, // Timestamp for when the document was uploaded
+      currentDate, // Timestamp for when the record was created
+      currentDate // Timestamp for when the record was last updated
+    ]);
+  }
+  /**
+ * Initiates the account recovery process for a user
+ * @param {Object} recoveryData - Data for account recovery
+ * @param {string} [recoveryData.email] - User's email address
+ * @param {string} [recoveryData.phoneNumber] - User's phone number
+ * @param {string} recoveryData.method - Recovery method ('email' or 'sms')
+ * @returns {Promise<Object>} Recovery process result
+ * @throws {Error} If recovery initiation fails
+ */
+  static async initiateRecovery(recoveryData) {
+    // Verify that either email or phone number is provided
+    if (!recoveryData.email && !recoveryData.phoneNumber) {
+      throw new Error("Either email or phone number is required");
+    }
+    // If user not found, throw an error
+    if (!user) {
+      throw new Error('No account found with the provided information');
+    }
+    // Check if the account is active
+    if (user.account_status !== 'active') {
+      throw new Error(`Account is ${user.account_status}. Please contact support.`);
+    }
+    // Generate an OTP for account recovery
+    const OTP = require("./OTP");
+    const otpData =
+    {
+      userId: user.user_id,
+      email: recoveryData.method === 'email' ? user.email : undefined,
+      phoneNumber: recoveryData.method === 'sms' ? user.phone_number : undefined,
+      purpose: 'account_recovery',
+      deliveryMethod: recoveryData.method
+    };
+    // Generate and send the OTP
+    await OTP.generate(otpData);
+
+    return {
+      userId: user.user_id,
+      method: recoveryData.method,
+      destination: recoveryData.method === 'email'
+        ? this._maskEmail(user.email)
+        : this._maskPhoneNumber(user.phone_number),
+      message: `Recovery code sent via ${recoveryData.method}`
+    };
+  }
+  /**
+ * Completes the account recovery process by setting a new password
+ * @param {Object} recoveryData - Data for completing account recovery
+ * @param {string} recoveryData.userId - User's unique ID
+ * @param {string} recoveryData.otpCode - OTP code received by the user
+ * @param {string} recoveryData.newPassword - New password to set
+ * @returns {Promise<Object>} Recovery completion result
+ * @throws {Error} If recovery completion fails
+ */
+  static async completeRecovery(recoveryData) {
+    // Verify that all required fields are provided
+    if (!recoveryData.userId || !recoveryData.otpCode || !recoveryData.newPassword) {
+      throw new Error('User ID, OTP code, and new password are required');
+    }
+
+    // Verify the OTP
+    const OTP = require('./otp.model');
+    const isValid = await OTP.verify({
+      userId: recoveryData.userId,
+      otpCode: recoveryData.otpCode,
+      purpose: 'account_recovery'
+    });
+
+    if (!isValid) {
+      throw new Error('Invalid or expired recovery code');
+    }
+
+    // Change the user's password
+    await this.changePassword(recoveryData.userId, recoveryData.newPassword);
+
+    // Update the last login information
+    await this.updateLoginInfo(recoveryData.userId, recoveryData.ipAddress || null);
+
+    return {
+      success: true,
+      message: 'Password has been successfully reset'
+    };
+  }
+  /**
+ * Updates user contact preferences
+ * @param {string} userId - User's unique ID
+ * @param {Object} preferences - User preferences
+ * @param {string} preferences.preferredContactMethod - Preferred contact method ('email' or 'sms')
+ * @returns {Promise<Object>} Updated user object
+ */
+  static async updateContactPreferences(userId, preferences) {
+    if (!preferences.preferredContactMethod) {
+      throw new Error('Preferred contact method is required');
+    }
+
+    if (!['email', 'sms'].includes(preferences.preferredContactMethod)) {
+      throw new Error('Preferred contact method must be either "email" or "sms"');
+    }
+
+    const queryText = `
+    UPDATE users 
+    SET 
+      preferred_contact_method = $1,
+      updated_at = $2
+    WHERE user_id = $3
+    RETURNING 
+      user_id, 
+      full_name, 
+      email, 
+      phone_number, 
+      preferred_contact_method, 
+      email_verified, 
+      phone_verified, 
+      account_status;
+  `;
+    const res = await query(queryText, [
+      preferences.preferredContactMethod,
+      new Date().toISOString(),
+      userId
+    ]);
+
+    if (res.rows.length === 0) {
+      throw new Error('User not found');
+    }
+
+    return res.rows[0];
+  }
+  /**
+ * Creates a new session for a user
+ * @param {string} userId - User's unique ID
+ * @param {Object} sessionData - Session data
+ * @param {string} sessionData.ipAddress - User's IP address
+ * @param {string} sessionData.userAgent - User's browser/device information
+ * @param {number} [sessionData.expiresInDays=7] - Session expiration in days
+ * @returns {Promise<Object>} Created session object
+ */
+  static async createSession(userId, sessionData) {
+    const sessionId = uuidv4();
+    const currentDate = new Date().toISOString();
+    const expiryDate = new Date(Date.now() + (sessionData.expiresInDays || 7) * 24 * 60 * 60 * 1000).toISOString();
+
+    const queryText = `
+    INSERT INTO user_sessions (
+      session_id, 
+      user_id, 
+      ip_address, 
+      user_agent, 
+      expires_at, 
+      created_at, 
+      last_active_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+    RETURNING 
+      session_id, 
+      user_id, 
+      expires_at;
+  `;
+
+    const values = [
+      sessionId,
+      userId,
+      sessionData.ipAddress,
+      sessionData.userAgent,
+      expiryDate,
+      currentDate,
+      currentDate
+    ];
+
+    try {
+      const res = await query(queryText, values);
+      return res.rows[0];
+    } catch (error) {
+      throw new Error(`Failed to create session: ${error.message}`);
+    }
+  }
+  /**
+   * Validates a user session
+   * @param {string} sessionId - Session ID to validate
+   * @returns {Promise<Object|null>} Session data if valid, null if invalid or expired
+   */
+  static async validateSession(sessionId) {
+    const queryText = `
+    SELECT 
+      s.session_id, 
+      s.user_id, 
+      s.expires_at,
+      u.account_status
+    FROM 
+      user_sessions s
+    JOIN 
+      users u ON s.user_id = u.user_id
+    WHERE 
+      s.session_id = $1 
+      AND s.expires_at > NOW()
+      AND s.is_active = true;
+  `;
+
+    const res = await query(queryText, [sessionId]);
+    if (res.rows.length === 0) {
+      return null;
+    }
+
+    // Update the last active timestamp
+    await query(
+      `UPDATE user_sessions SET last_active_at = $1 WHERE session_id = $2`,
+      [new Date().toISOString(), sessionId]
+    );
+
+    return res.rows[0];
+  }
+  /**
+   * Invalidates a user session (logout)
+   * @param {string} sessionId - Session ID to invalidate
+   * @returns {Promise<boolean>} True if session was invalidated, false otherwise
+   */
+  static async invalidateSession(sessionId) {
+    const queryText = `
+    UPDATE user_sessions 
+    SET 
+      is_active = false,
+      updated_at = $1
+    WHERE session_id = $2
+    RETURNING session_id;
+  `;
+
+    const res = await query(queryText, [new Date().toISOString(), sessionId]);
+    return res.rows.length > 0;
+  }
+  /**
+   * Invalidates a user session (logout)
+   * @param {string} sessionId - Session ID to invalidate
+   * @returns {Promise<boolean>} True if session was invalidated, false otherwise
+   */
+  static async invalidateSession(sessionId) {
+    const queryText = `
+    UPDATE user_sessions 
+    SET 
+      is_active = false,
+      updated_at = $1
+    WHERE session_id = $2
+    RETURNING session_id;
+  `;
+
+    const res = await query(queryText, [new Date().toISOString(), sessionId]);
+    return res.rows.length > 0;
+  }
+
+  /**
+   * Invalidates all sessions for a user except the current one
+   * @param {string} userId - User's unique ID
+   * @param {string} [currentSessionId] - Current session ID to preserve (optional)
+   * @returns {Promise<number>} Number of sessions invalidated
+   */
+  static async invalidateAllOtherSessions(userId, currentSessionId) {
+    let queryText = `
+    UPDATE user_sessions 
+    SET 
+      is_active = false,
+      updated_at = $1
+    WHERE 
+      user_id = $2
+  `;
+    const values = [new Date().toISOString(), userId];
+
+    // If currentSessionId is provided, don't invalidate it
+    if (currentSessionId) {
+      queryText += ` AND session_id != $3`;
+      values.push(currentSessionId);
+    }
+
+    const res = await query(queryText, values);
+    return res.rowCount;
+  }
+  /**
+   * Helper method to mask email address for privacy
+   * @param {string} email - Email address to mask
+   * @returns {string} Masked email address
+   * @private
+   */
+  static _maskEmail(email) {
+    if (!email) return '';
+    const [username, domain] = email.split('@');
+    const maskedUsername = username.charAt(0) +
+      '*'.repeat(Math.max(1, username.length - 2)) +
+      username.charAt(username.length - 1);
+    return `${maskedUsername}@${domain}`;
+  }
+
+  /**
+   * Helper method to mask phone number for privacy
+   * @param {string} phoneNumber - Phone number to mask
+   * @returns {string} Masked phone number
+   * @private
+   */
+  static _maskPhoneNumber(phoneNumber) {
+    if (!phoneNumber) return '';
+    return phoneNumber.slice(0, 4) + '*'.repeat(phoneNumber.length - 7) + phoneNumber.slice(-3);
+  }
+
 }

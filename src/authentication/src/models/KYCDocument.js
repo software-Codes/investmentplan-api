@@ -1,1 +1,0 @@
-// # KYC documents table schema
