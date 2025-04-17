@@ -1,4 +1,3 @@
-// authentication/src/Config/setupDatabase.js
 const { query, checkDatabaseConnection } = require("./neon-database");
 const constants = require("../utils/constants");
 
@@ -19,7 +18,7 @@ const logger = {
 async function createEnumTypes() {
   try {
     logger.info('Creating custom ENUM types...');
-    
+
     // Create ENUM types using raw SQL formatting
     await query(`
       CREATE TYPE contact_method_enum AS ENUM ('${constants.CONTACT_METHODS.join("', '")}')
@@ -55,7 +54,7 @@ async function createEnumTypes() {
 async function createTables() {
   try {
     logger.info('Creating database tables...');
-    
+
     // Use the exact SQL schema from your original file
     const schemaSQL = `
       CREATE TABLE IF NOT EXISTS users (
@@ -98,8 +97,24 @@ async function createTables() {
           updated_at TIMESTAMP WITH TIME ZONE NOT NULL
       );
 
-      -- Include all other table definitions from your original schema
-      -- Make sure to maintain the exact order from your original SQL file
+      CREATE TABLE IF NOT EXISTS otp_records (
+          otp_id UUID PRIMARY KEY,
+          user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+          email VARCHAR(255),
+          phone_number VARCHAR(20),
+          otp_code VARCHAR(6) NOT NULL,
+          otp_purpose otp_purpose_enum NOT NULL,
+          delivery_method otp_delivery_enum NOT NULL,
+          is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+          attempt_count INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+          expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_otp_user_id ON otp_records(user_id);
+      CREATE INDEX IF NOT EXISTS idx_otp_email ON otp_records(email);
+      CREATE INDEX IF NOT EXISTS idx_otp_phone_number ON otp_records(phone_number);
+      CREATE INDEX IF NOT EXISTS idx_otp_purpose ON otp_records(otp_purpose);
     `;
 
     await query(schemaSQL);
@@ -113,13 +128,13 @@ async function createTables() {
 async function setupDatabase() {
   try {
     logger.info('Starting database setup...');
-    
+
     // Verify database connection first
     await checkDatabaseConnection();
-    
+
     // Create enums first
     await createEnumTypes();
-    
+
     // Create tables and indexes
     await createTables();
 
