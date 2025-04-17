@@ -481,7 +481,7 @@ class User {
           WHERE 
             u.user_id = $1;
         `;
-        const res = await query(queryText, [userId]);
-        return res.rows[0] || null;
+    const res = await query(queryText, [userId]);
+    return res.rows[0] || null;
   }
 }
