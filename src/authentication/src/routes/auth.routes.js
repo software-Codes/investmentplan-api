@@ -1,60 +1,65 @@
-// # /signup, /login, /verify-otp
-
-const express = require("express");
+// routes/auth.routes.js
+const express = require('express');
 const router = express.Router();
-const authController = require("../controllers/auth.controller");
-const {
-    authenticate,
-    authorize
-} = require("../middleware/auth.middleware");
-const validationMiddleware = require("../middleware/validation.middleware");
-const  rateLimiter = require("../middleware/rate-limiter");
+const authController = require('../controllers/auth.controller');
+const { validateRegistration, validateLogin, validateOtpVerification } = require('../middleware/validation.middleware');
+const { loginLimiter, otpLimiter, apiLimiter } = require('../middleware/rate-limiter');
 
 // Apply general rate limiting to all routes
-router.use(rateLimiter.apiLimiter);
-
+router.use(apiLimiter);
 
 // Registration route with validation and rate limiting
 router.post(
-    '/register',
-    validationMiddleware.validateRegistration,
-    rateLimiter.otpLimiter,
-    authController.register
-  );
+  '/register',
+  validateRegistration,
+  otpLimiter,
+  (req, res, next) => {
+    authController.register(req, res, next);
+  }
+);
 
-  // Login route with validation and rate limiting
+// Login route with validation and rate limiting
 router.post(
-    '/login',
-    validationMiddleware.validateLogin,
-    rateLimiter.loginLimiter,
-    authController.login
-  );
+  '/login',
+  validateLogin,
+  loginLimiter,
+  (req, res, next) => {
+    authController.login(req, res, next);
+  }
+);
 
-  // OTP verification route with validation
+// OTP verification route with validation
 router.post(
-    '/verify-otp',
-    validationMiddleware.validateOtpVerification,
-    authController.verifyOtp
-  );
+  '/verify-otp',
+  validateOtpVerification,
+  (req, res, next) => {
+    authController.verifyOtp(req, res, next);
+  }
+);
 
-  // Logout route protected by authentication
+// Logout route protected by authentication
 router.post(
-    '/logout',
-    authenticate,
-    authController.logout
-  );
+  '/logout',
+  (req, res, next) => {
+    authController.logout(req, res, next);
+  }
+);
 
-  // Password recovery routes
+// Password recovery routes
 router.post(
-    '/initiate-recovery',
-    validationMiddleware.validateLogin,
-    authController.initiateRecovery
-  );
+  '/initiate-recovery',
+  validateLogin,
+  (req, res, next) => {
+    authController.initiateRecovery(req, res, next);
+  }
+);
 
-  router.post(
-    '/complete-recovery',
-    validationMiddleware.validateOtpVerification,
-    authController.completeRecovery
-  );
+router.post(
+  '/complete-recovery',
+  validateOtpVerification,
+  (req, res, next) => {
+    authController.completeRecovery(req, res, next);
+  }
+);
 
-  module.exports = router();
+module.exports = router;

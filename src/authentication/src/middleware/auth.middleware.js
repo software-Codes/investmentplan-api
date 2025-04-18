@@ -6,7 +6,7 @@
 
 const jwt = require('jsonwebtoken');
 const { logger } = require('../utils/logger');
-const { error } = require('../utils/response.utill');
+const { error } = require('../utils/response.util');
 
 /**
  * Authenticates a user based on a JWT token provided in the Authorization header
