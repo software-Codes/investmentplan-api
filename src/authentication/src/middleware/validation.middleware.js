@@ -16,13 +16,16 @@ const { error } = require('../utils/response.util');
 exports.validateRegistration = [
     body('fullName').notEmpty().withMessage('Full name is required'),
     body('email').isEmail().withMessage('Invalid email address'),
-    body('phoneNumber').isMobilePhone().withMessage('Invalid phone number'),
+    body('phoneNumber')
+        .matches(/^\+?[0-9]{10,15}$/)
+        .withMessage('Invalid phone number format. Must be between 10-15 digits, can start with +'),
     body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long'),
     body('preferredContactMethod').isIn(['email', 'sms']).withMessage('Invalid contact method'),
     (req, res, next) => {
         try {
             const errors = validationResult(req);
             if (!errors.isEmpty()) {
+                console.log('Validation errors:', errors.array());
                 return next(error(new Error('Validation failed'), errors.array(), 400));
             }
             next();

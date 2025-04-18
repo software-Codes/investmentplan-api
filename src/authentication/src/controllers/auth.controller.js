@@ -18,8 +18,16 @@ class AuthController {
      * @param {string} userData.preferredContactMethod - User's preferred contact method ('email' or 'sms')
      * @returns {Promise<Object>} Registration result with user data
      */
-    static async register(userData) {
+    // controllers/auth.controller.js
+    static async register(req, res, next) {
         try {
+            const userData = req.body;
+
+            // Check if password is present
+            if (!userData.password) {
+                return next(new Error('Password is required'));
+            }
+
             // Create the user
             const user = await User.create(userData);
 
@@ -40,7 +48,7 @@ class AuthController {
             // Generate and send the OTP
             await OTP.generate(otpData);
 
-            return {
+            return res.status(201).json({
                 success: true,
                 user: {
                     userId: user.user_id,
@@ -51,10 +59,9 @@ class AuthController {
                     accountStatus: user.account_status
                 },
                 message: `Verification code sent via ${otpData.deliveryMethod}`
-            };
+            });
         } catch (error) {
-            logger.error(`Registration failed: ${error.message}`);
-            throw new Error(`Registration failed: ${error.message}`);
+            next(error);
         }
     }
 

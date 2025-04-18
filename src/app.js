@@ -148,14 +148,14 @@ const createApp = () => {
 
     // Register authentication routes with middleware
     app.use(
-      "/api/auth",
-      [
-        apiLimiter, // Apply general rate limiting
-        validateRegistration, // Apply validation middleware
-        validateLogin, // Apply login validation middleware
-        loginLimiter, // Apply login rate limiting
-        otpLimiter, // Apply OTP rate limiting
-      ],
+      "/api/v1/auth",
+      // [
+      //   apiLimiter, // Apply general rate limiting
+      //   validateRegistration, // Apply validation middleware
+      //   validateLogin, // Apply login validation middleware
+      //   loginLimiter, // Apply login rate limiting
+      //   otpLimiter, // Apply OTP rate limiting
+      // ],
       authRoutes
     );
   }
