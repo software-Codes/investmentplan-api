@@ -10,6 +10,10 @@ const cookieParser = require("cookie-parser");
 const crypto = require("crypto");
 const database = require("./authentication/src/Config/neon-database");
 const setupDatabase = require("./authentication/src/Config/setupDatabase");
+const authRoutes = require("./routes/auth.routes"); // Import auth routes
+const { authenticate } = require("./middleware/auth.middleware"); // Import authentication middleware
+const { validateRegistration, validateLogin } = require("./middleware/validation.middleware"); // Import validation middleware
+const { loginLimiter, apiLimiter, otpLimiter } = require("./middleware/rate.limiter"); // Import rate limiting middleware
 
 /**
  * Validate required environment variables with safe defaults
@@ -142,6 +146,19 @@ const createApp = () => {
     app.get("/", (req, res) => {
       res.json({ availableRoutes: listRoutes() });
     });
+
+    // Register authentication routes with middleware
+    app.use(
+      "/api/auth",
+      [
+        apiLimiter, // Apply general rate limiting
+        validateRegistration, // Apply validation middleware
+        validateLogin, // Apply login validation middleware
+        loginLimiter, // Apply login rate limiting
+        otpLimiter, // Apply OTP rate limiting
+      ],
+      authRoutes
+    );
   }
 
   /**
