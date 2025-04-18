@@ -11,12 +11,12 @@ router.use(apiLimiter);
 // Registration route with validation and rate limiting
 router.post(
     '/register',
-    validateRegistration, // Include validation middleware
-    otpLimiter, // Apply rate limiting after validation
+    validateRegistration,
+    otpLimiter,
     (req, res, next) => {
-        authController.register(req, res, next);
+      authController.register(req, res, next);
     }
-);
+  );
 // Login route with validation and rate limiting
 router.post(
     '/login',

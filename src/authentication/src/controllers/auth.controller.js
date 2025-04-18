@@ -19,51 +19,53 @@ class AuthController {
      * @returns {Promise<Object>} Registration result with user data
      */
     // controllers/auth.controller.js
-    static async register(req, res, next) {
-        try {
-            const userData = req.body;
+// controllers/auth.controller.js
+static async register(req, res, next) {
+    try {
+        const userData = req.body;
 
-            // Check if password is present
-            if (!userData.password) {
-                return next(new Error('Password is required'));
-            }
-
-            // Create the user
-            const user = await User.create(userData);
-
-            // Generate and send OTP based on preferred contact method
-            const otpData = {
-                userId: user.user_id,
-                purpose: 'registration',
-                deliveryMethod: userData.preferredContactMethod || 'email',
-            };
-
-            // Add the appropriate contact detail based on preferred method
-            if (otpData.deliveryMethod === 'email') {
-                otpData.email = user.email;
-            } else {
-                otpData.phoneNumber = user.phone_number;
-            }
-
-            // Generate and send the OTP
-            await OTP.generate(otpData);
-
-            return res.status(201).json({
-                success: true,
-                user: {
-                    userId: user.user_id,
-                    fullName: user.full_name,
-                    email: user.email,
-                    phoneNumber: user.phone_number,
-                    preferredContactMethod: user.preferred_contact_method,
-                    accountStatus: user.account_status
-                },
-                message: `Verification code sent via ${otpData.deliveryMethod}`
-            });
-        } catch (error) {
-            next(error);
+        // Check if password is present
+        if (!userData.password) {
+            return next(new Error('Password is required'));
         }
+
+        // Create the user
+        const user = await User.create(userData);
+
+        // Generate and send OTP for registration
+        const otpData = {
+            userId: user.user_id,
+            purpose: 'registration',
+            deliveryMethod: userData.preferredContactMethod || 'email',
+        };
+
+        // Add the appropriate contact detail based on preferred method
+        if (otpData.deliveryMethod === 'email') {
+            otpData.email = user.email;
+        } else {
+            otpData.phoneNumber = user.phone_number;
+        }
+
+        // Generate and send the OTP
+        await OTP.generate(otpData);
+
+        return res.status(201).json({
+            success: true,
+            user: {
+                userId: user.user_id,
+                fullName: user.full_name,
+                email: user.email,
+                phoneNumber: user.phone_number,
+                preferredContactMethod: user.preferred_contact_method,
+                accountStatus: user.account_status
+            },
+            message: `Verification code sent via ${otpData.deliveryMethod}`
+        });
+    } catch (error) {
+        next(error);
     }
+}
+
 
     /**
      * Authenticate user credentials and handle OTP verification if required
