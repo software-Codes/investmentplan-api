@@ -13,6 +13,7 @@ const { error } = require('../utils/response.util');
  * @param {Function} next - Express next middleware function
  * @returns {void}
  */
+// middleware/validation.middleware.js
 exports.validateRegistration = [
     body('fullName').notEmpty().withMessage('Full name is required'),
     body('email').isEmail().withMessage('Invalid email address'),
@@ -20,7 +21,7 @@ exports.validateRegistration = [
         .matches(/^\+?[0-9]{10,15}$/)
         .withMessage('Invalid phone number format. Must be between 10-15 digits, can start with +'),
     body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long'),
-    body('preferredContactMethod').isIn(['email', 'sms']).withMessage('Invalid contact method'),
+    body('preferredContactMethod').isIn(['email', 'phone']).withMessage('Invalid contact method'),
     (req, res, next) => {
         try {
             const errors = validationResult(req);

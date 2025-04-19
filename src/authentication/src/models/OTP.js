@@ -30,67 +30,70 @@ class OTP {
    * @returns {Promise<Object>} The generated OTP record from the database.
    * @throws {Error} Throws an error if OTP generation or database operation fails.
    */
-// models/OTP.js
-static async generate(otpData) {
-  // Invalidate previous OTPs for the same purpose and identifier
-  if (otpData.userId) {
+  // models/OTP.js
+  static async generate(otpData) {
+    // Check if the purpose is registration
+    if (otpData.purpose !== 'registration') {
+      throw new Error('OTP can only be generated for registration');
+    }
+
+    // Invalidate previous OTPs for the same purpose and identifier
+    if (otpData.userId) {
       await this.invalidatePreviousOTPs(otpData.userId, otpData.purpose);
-  } else if (otpData.email) {
+    } else if (otpData.email) {
       await this.invalidatePreviousOTPsByEmail(otpData.email, otpData.purpose);
-  } else if (otpData.phoneNumber) {
+    } else if (otpData.phoneNumber) {
       await this.invalidatePreviousOTPsByPhone(otpData.phoneNumber, otpData.purpose);
-  }
+    }
 
-  // Generate a new OTP code (6-digit random number)
-  const otpCode = crypto.randomInt(100000, 999999).toString();
+    // Generate a new OTP code (6-digit random number)
+    const otpCode = crypto.randomInt(100000, 999999).toString();
 
-  // Generate a unique ID for the OTP record
-  const otpId = uuidv4();
+    // Generate a unique ID for the OTP record
+    const otpId = uuidv4();
 
-  // Set the expiry time for the OTP (default is 10 minutes)
-  const expiryMinutes = otpData.expiryMinutes || 10;
-  const expiryDate = new Date(Date.now() + expiryMinutes * 60000); // Current time + expiryMinutes
+    // Set the expiry time for the OTP (default is 10 minutes)
+    const expiryMinutes = otpData.expiryMinutes || 10;
+    const expiryDate = new Date(Date.now() + expiryMinutes * 60000); // Current time + expiryMinutes
 
-  // Set the current timestamp
-  const currentDate = new Date().toISOString();
+    // Set the current timestamp
+    const currentDate = new Date().toISOString();
 
-  // SQL query to insert the new OTP record into the database
-  const queryText = `
+    // SQL query to insert the new OTP record into the database
+    const queryText = `
   INSERT INTO otp_records (
-    otp_id, user_id, email, phone_number, otp_code, otp_purpose, 
+    otp_id, user_id, phone_number, otp_code, otp_purpose, 
     delivery_method, expires_at, created_at
-  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
   RETURNING *;
 `;
 
-  // Values to be inserted into the database
-  const values = [
-    otpId, // Unique OTP ID
-    otpData.userId || null, // User ID (if applicable)
-    otpData.email || null, // Email address (if applicable)
-    otpData.phoneNumber || null, // Phone number (if applicable)
-    otpCode, // Generated OTP code
-    otpData.purpose, // Purpose of the OTP
-    otpData.deliveryMethod, // Delivery method (email or sms)
-    expiryDate, // Expiry date and time
-    currentDate // Current timestamp
-  ];
+    // Values to be inserted into the database
+    const values = [
+      otpId, // Unique OTP ID
+      otpData.userId || null, // User ID (if applicable)
+      otpData.phoneNumber, // Phone number
+      otpCode, // Generated OTP code
+      otpData.purpose, // Purpose of the OTP
+      otpData.deliveryMethod, // Delivery method (sms)
+      expiryDate, // Expiry date and time
+      currentDate // Current timestamp
+    ];
 
-  try {
-    // Execute the query to insert the OTP record
-    const res = await query(queryText, values);
+    try {
+      // Execute the query to insert the OTP record
+      const res = await query(queryText, values);
 
-    // Send the OTP to the user via the specified delivery method
-    await this.sendOTP(otpData.deliveryMethod, otpData.email || otpData.phoneNumber, otpCode, otpData.purpose);
+      // Send the OTP to the user via SMS
+      await this.sendOTP(otpData.deliveryMethod, otpData.phoneNumber, otpCode, otpData.purpose);
 
-    // Return the generated OTP record
-    return res.rows[0];
-  } catch (error) {
-    // Throw an error if OTP generation or database operation fails
-    throw new Error(`Failed to generate OTP: ${error.message}`);
+      // Return the generated OTP record
+      return res.rows[0];
+    } catch (error) {
+      // Throw an error if OTP generation or database operation fails
+      throw new Error(`Failed to generate OTP: ${error.message}`);
+    }
   }
-}
-
   /**
    * Sends the generated OTP to the user via the specified delivery method
    * 
@@ -101,20 +104,20 @@ static async generate(otpData) {
    * @returns {Promise<void>} Resolves when the OTP is successfully sent
    * @throws {Error} Throws an error if the OTP sending fails
    */
+  // models/OTP.js
   static async sendOTP(method, destination, code, purpose) {
     try {
-      if (method === 'email') {
-        await OtpEmailService.sendOtp(destination, code, purpose);
-      } else if (method === 'sms') {
-        await OtpSmsService.sendOtp(destination, code, purpose);
-      } else {
-        throw new Error(`Unsupported delivery method: ${method}`);
-      }
+        if (method === 'email') {
+            await OtpEmailService.sendOtp(destination, code, purpose);
+        } else if (method === 'sms') {
+            await OtpSmsService.sendOtp(destination, code, purpose);
+        } else {
+            throw new Error(`Unsupported delivery method: ${method}`);
+        }
     } catch (error) {
-      throw new Error(`Failed to send OTP: ${error.message}`);
+        throw new Error(`Failed to send OTP: ${error.message}`);
     }
-  }
-
+}
   /**
    * Verifies a one-time password (OTP) for a user.
    * @param {Object} verifyData - Data required for OTP verification.

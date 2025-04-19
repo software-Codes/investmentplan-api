@@ -19,29 +19,28 @@ async function createEnumTypes() {
   try {
     logger.info('Creating custom ENUM types...');
 
-    // Create ENUM types using raw SQL formatting
     await query(`
-      CREATE TYPE contact_method_enum AS ENUM ('${constants.CONTACT_METHODS.join("', '")}')
+      CREATE TYPE contact_method_enum AS ENUM ('email', 'phone') -- Use "phone" instead of "phone_number"
     `);
 
     await query(`
-      CREATE TYPE account_status_enum AS ENUM ('${constants.ACCOUNT_STATUSES.join("', '")}')
+      CREATE TYPE account_status_enum AS ENUM ('pending', 'active', 'suspended', 'deactivated')
     `);
 
     await query(`
-      CREATE TYPE verification_status_enum AS ENUM ('${constants.VERIFICATION_STATUSES.join("', '")}')
+      CREATE TYPE verification_status_enum AS ENUM ('not_submitted', 'pending', 'verified', 'rejected')
     `);
 
     await query(`
-      CREATE TYPE document_type_enum AS ENUM ('${constants.DOCUMENT_TYPES.join("', '")}')
+      CREATE TYPE document_type_enum AS ENUM ('national_id', 'drivers_license', 'passport')
     `);
 
     await query(`
-      CREATE TYPE otp_purpose_enum AS ENUM ('${constants.OTP_PURPOSES.join("', '")}')
+      CREATE TYPE otp_purpose_enum AS ENUM ('registration', 'login', 'reset_password', 'withdrawal', 'profile_update')
     `);
 
     await query(`
-      CREATE TYPE otp_delivery_enum AS ENUM ('${constants.OTP_DELIVERY.join("', '")}')
+      CREATE TYPE otp_delivery_enum AS ENUM ('email', 'sms')
     `);
 
     logger.success('All custom ENUM types created successfully');

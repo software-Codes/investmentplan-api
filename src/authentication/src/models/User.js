@@ -27,9 +27,10 @@ class User {
     const userId = uuidv4();
     const currentDate = new Date().toISOString();
 
-    //hash the  user password
+    // Hash the user password
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(userData.password, saltRounds);
+
     const queryText = `
     INSERT INTO users (
       user_id, 
@@ -63,7 +64,7 @@ class User {
       userData.email.toLowerCase(),
       userData.phoneNumber,
       passwordHash,
-      userData.preferredContactMethod || "email",
+      userData.preferredContactMethod || "email", // Ensure "phone_number" is accepted
       false, // email_verified
       false, // phone_verified
       "pending", // account_status
@@ -76,14 +77,14 @@ class User {
       return res.rows[0];
     } catch (error) {
       if (error.code === "23505") {
-        //unique violation
+        // Unique violation
         if (error.detail.includes("email")) {
           throw new Error("Email address already registered");
         } else if (error.detail.includes("phone_number")) {
           throw new Error("Phone number already registered");
         }
       }
-      throw new Error(`failed to create the user ${error.message}`);
+      throw new Error(`Failed to create the user: ${error.message}`);
     }
   }
   /**

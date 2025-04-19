@@ -18,55 +18,65 @@ class AuthController {
      * @param {string} userData.preferredContactMethod - User's preferred contact method ('email' or 'sms')
      * @returns {Promise<Object>} Registration result with user data
      */
-    // controllers/auth.controller.js
-// controllers/auth.controller.js
-static async register(req, res, next) {
-    try {
-        const userData = req.body;
+    static async register(req, res, next) {
+        try {
+            const userData = req.body;
 
-        // Check if password is present
-        if (!userData.password) {
-            return next(new Error('Password is required'));
-        }
+            if (!userData.password) {
+                return next(new Error('Password is required'));
+            }
 
-        // Create the user
-        const user = await User.create(userData);
+            const existingUser = await User.findbyEmail(userData.email);
+            if (existingUser) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'User already exists'
+                });
+            }
 
-        // Generate and send OTP for registration
-        const otpData = {
-            userId: user.user_id,
-            purpose: 'registration',
-            deliveryMethod: userData.preferredContactMethod || 'email',
-        };
+            const user = await User.create(userData);
 
-        // Add the appropriate contact detail based on preferred method
-        if (otpData.deliveryMethod === 'email') {
-            otpData.email = user.email;
-        } else {
-            otpData.phoneNumber = user.phone_number;
-        }
+            let deliveryMethod, contactDetail;
+            if (userData.preferredContactMethod === 'email') {
+                deliveryMethod = 'email';
+                contactDetail = user.email;
+            } else if (userData.preferredContactMethod === 'phone') {
+                deliveryMethod = 'sms';
+                contactDetail = user.phone_number;
+            } else {
+                return next(new Error('Invalid contact method'));
+            }
 
-        // Generate and send the OTP
-        await OTP.generate(otpData);
-
-        return res.status(201).json({
-            success: true,
-            user: {
+            const otpData = {
                 userId: user.user_id,
-                fullName: user.full_name,
-                email: user.email,
-                phoneNumber: user.phone_number,
-                preferredContactMethod: user.preferred_contact_method,
-                accountStatus: user.account_status
-            },
-            message: `Verification code sent via ${otpData.deliveryMethod}`
-        });
-    } catch (error) {
-        next(error);
+                purpose: 'registration',
+                deliveryMethod: deliveryMethod,
+            };
+
+            if (deliveryMethod === 'email') {
+                otpData.email = contactDetail;
+            } else {
+                otpData.phoneNumber = contactDetail;
+            }
+
+            await OTP.generate(otpData);
+
+            return res.status(201).json({
+                success: true,
+                user: {
+                    userId: user.user_id,
+                    fullName: user.full_name,
+                    email: user.email,
+                    phoneNumber: user.phone_number,
+                    preferredContactMethod: user.preferred_contact_method,
+                    accountStatus: user.account_status
+                },
+                message: `Verification code sent via ${deliveryMethod}`
+            });
+        } catch (error) {
+            next(error);
+        }
     }
-}
-
-
     /**
      * Authenticate user credentials and handle OTP verification if required
      * @param {Object} credentials - User login credentials
