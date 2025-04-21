@@ -488,7 +488,7 @@ class User {
   /**
    * Submits or updates KYC (Know Your Customer) documents for a user.
    * If a document already exists for the user, it updates the existing record.
-   * 
+   *
    * @param {string} userId - The unique ID of the user.
    * @param {Object} documentData - The data for the KYC document.
    * @param {string} documentData.documentType - The type of the document (e.g., "passport", "national_id").
@@ -537,21 +537,21 @@ class User {
       documentData.documentNumber, // Document number
       documentData.documentCountry, // Country of issuance
       documentData.blobStoragePath, // Path to the document in blob storage
-      'pending', // Default verification status
+      "pending", // Default verification status
       currentDate, // Timestamp for when the document was uploaded
       currentDate, // Timestamp for when the record was created
-      currentDate // Timestamp for when the record was last updated
+      currentDate, // Timestamp for when the record was last updated
     ]);
   }
   /**
- * Initiates the account recovery process for a user
- * @param {Object} recoveryData - Data for account recovery
- * @param {string} [recoveryData.email] - User's email address
- * @param {string} [recoveryData.phoneNumber] - User's phone number
- * @param {string} recoveryData.method - Recovery method ('email' or 'sms')
- * @returns {Promise<Object>} Recovery process result
- * @throws {Error} If recovery initiation fails
- */
+   * Initiates the account recovery process for a user
+   * @param {Object} recoveryData - Data for account recovery
+   * @param {string} [recoveryData.email] - User's email address
+   * @param {string} [recoveryData.phoneNumber] - User's phone number
+   * @param {string} recoveryData.method - Recovery method ('email' or 'sms')
+   * @returns {Promise<Object>} Recovery process result
+   * @throws {Error} If recovery initiation fails
+   */
   static async initiateRecovery(recoveryData) {
     // Verify that either email or phone number is provided
     if (!recoveryData.email && !recoveryData.phoneNumber) {
@@ -559,21 +559,23 @@ class User {
     }
     // If user not found, throw an error
     if (!user) {
-      throw new Error('No account found with the provided information');
+      throw new Error("No account found with the provided information");
     }
     // Check if the account is active
-    if (user.account_status !== 'active') {
-      throw new Error(`Account is ${user.account_status}. Please contact support.`);
+    if (user.account_status !== "active") {
+      throw new Error(
+        `Account is ${user.account_status}. Please contact support.`
+      );
     }
     // Generate an OTP for account recovery
     const OTP = require("./OTP");
-    const otpData =
-    {
+    const otpData = {
       userId: user.user_id,
-      email: recoveryData.method === 'email' ? user.email : undefined,
-      phoneNumber: recoveryData.method === 'sms' ? user.phone_number : undefined,
-      purpose: 'account_recovery',
-      deliveryMethod: recoveryData.method
+      email: recoveryData.method === "email" ? user.email : undefined,
+      phoneNumber:
+        recoveryData.method === "sms" ? user.phone_number : undefined,
+      purpose: "account_recovery",
+      deliveryMethod: recoveryData.method,
     };
     // Generate and send the OTP
     await OTP.generate(otpData);
@@ -581,64 +583,74 @@ class User {
     return {
       userId: user.user_id,
       method: recoveryData.method,
-      destination: recoveryData.method === 'email'
-        ? this._maskEmail(user.email)
-        : this._maskPhoneNumber(user.phone_number),
-      message: `Recovery code sent via ${recoveryData.method}`
+      destination:
+        recoveryData.method === "email"
+          ? this._maskEmail(user.email)
+          : this._maskPhoneNumber(user.phone_number),
+      message: `Recovery code sent via ${recoveryData.method}`,
     };
   }
   /**
- * Completes the account recovery process by setting a new password
- * @param {Object} recoveryData - Data for completing account recovery
- * @param {string} recoveryData.userId - User's unique ID
- * @param {string} recoveryData.otpCode - OTP code received by the user
- * @param {string} recoveryData.newPassword - New password to set
- * @returns {Promise<Object>} Recovery completion result
- * @throws {Error} If recovery completion fails
- */
+   * Completes the account recovery process by setting a new password
+   * @param {Object} recoveryData - Data for completing account recovery
+   * @param {string} recoveryData.userId - User's unique ID
+   * @param {string} recoveryData.otpCode - OTP code received by the user
+   * @param {string} recoveryData.newPassword - New password to set
+   * @returns {Promise<Object>} Recovery completion result
+   * @throws {Error} If recovery completion fails
+   */
   static async completeRecovery(recoveryData) {
     // Verify that all required fields are provided
-    if (!recoveryData.userId || !recoveryData.otpCode || !recoveryData.newPassword) {
-      throw new Error('User ID, OTP code, and new password are required');
+    if (
+      !recoveryData.userId ||
+      !recoveryData.otpCode ||
+      !recoveryData.newPassword
+    ) {
+      throw new Error("User ID, OTP code, and new password are required");
     }
 
     // Verify the OTP
-    const OTP = require('./otp.model');
+    const OTP = require("./otp.model");
     const isValid = await OTP.verify({
       userId: recoveryData.userId,
       otpCode: recoveryData.otpCode,
-      purpose: 'account_recovery'
+      purpose: "account_recovery",
     });
 
     if (!isValid) {
-      throw new Error('Invalid or expired recovery code');
+      throw new Error("Invalid or expired recovery code");
     }
 
     // Change the user's password
     await this.changePassword(recoveryData.userId, recoveryData.newPassword);
 
     // Update the last login information
-    await this.updateLoginInfo(recoveryData.userId, recoveryData.ipAddress || null);
+    await this.updateLoginInfo(
+      recoveryData.userId,
+      recoveryData.ipAddress || null
+    );
 
     return {
       success: true,
-      message: 'Password has been successfully reset'
+      message: "Password has been successfully reset",
     };
   }
   /**
- * Updates user contact preferences
- * @param {string} userId - User's unique ID
- * @param {Object} preferences - User preferences
- * @param {string} preferences.preferredContactMethod - Preferred contact method ('email' or 'sms')
- * @returns {Promise<Object>} Updated user object
- */
+   * Updates user contact preferences
+   * @param {string} userId - User's unique ID
+   * @param {Object} preferences - User preferences
+   * @param {string} preferences.preferredContactMethod - Preferred contact method ('email' or 'sms')
+   * @returns {Promise<Object>} Updated user object
+   */
   static async updateContactPreferences(userId, preferences) {
     if (!preferences.preferredContactMethod) {
-      throw new Error('Preferred contact method is required');
+      throw new Error("Preferred contact method is required");
     }
 
-    if (!['email', 'sms'].includes(preferences.preferredContactMethod)) {
-      throw new Error('Preferred contact method must be either "email" or "sms"');
+    if (!["email", "sms"].includes(preferences.preferredContactMethod)) {
+      throw new Error(
+        'Preferred contact method must be either "email" or "sms"'
+      );
     }
 
     const queryText = `
@@ -660,28 +672,30 @@ class User {
     const res = await query(queryText, [
       preferences.preferredContactMethod,
       new Date().toISOString(),
-      userId
+      userId,
     ]);
 
     if (res.rows.length === 0) {
-      throw new Error('User not found');
+      throw new Error("User not found");
     }
 
     return res.rows[0];
   }
   /**
- * Creates a new session for a user
- * @param {string} userId - User's unique ID
- * @param {Object} sessionData - Session data
- * @param {string} sessionData.ipAddress - User's IP address
- * @param {string} sessionData.userAgent - User's browser/device information
- * @param {number} [sessionData.expiresInDays=7] - Session expiration in days
- * @returns {Promise<Object>} Created session object
- */
+   * Creates a new session for a user
+   * @param {string} userId - User's unique ID
+   * @param {Object} sessionData - Session data
+   * @param {string} sessionData.ipAddress - User's IP address
+   * @param {string} sessionData.userAgent - User's browser/device information
+   * @param {number} [sessionData.expiresInDays=7] - Session expiration in days
+   * @returns {Promise<Object>} Created session object
+   */
   static async createSession(userId, sessionData) {
     const sessionId = uuidv4();
     const currentDate = new Date().toISOString();
-    const expiryDate = new Date(Date.now() + (sessionData.expiresInDays || 7) * 24 * 60 * 60 * 1000).toISOString();
+    const expiryDate = new Date(
+      Date.now() + (sessionData.expiresInDays || 7) * 24 * 60 * 60 * 1000
+    ).toISOString();
 
     const queryText = `
     INSERT INTO user_sessions (
@@ -706,7 +720,7 @@ class User {
       sessionData.userAgent,
       expiryDate,
       currentDate,
-      currentDate
+      currentDate,
     ];
 
     try {
@@ -821,10 +835,11 @@ class User {
    * @private
    */
   static _maskEmail(email) {
-    if (!email) return '';
-    const [username, domain] = email.split('@');
-    const maskedUsername = username.charAt(0) +
-      '*'.repeat(Math.max(1, username.length - 2)) +
+    if (!email) return "";
+    const [username, domain] = email.split("@");
+    const maskedUsername =
+      username.charAt(0) +
+      "*".repeat(Math.max(1, username.length - 2)) +
       username.charAt(username.length - 1);
     return `${maskedUsername}@${domain}`;
   }
@@ -836,11 +851,101 @@ class User {
    * @private
    */
   static _maskPhoneNumber(phoneNumber) {
-    if (!phoneNumber) return '';
-    return phoneNumber.slice(0, 4) + '*'.repeat(phoneNumber.length - 7) + phoneNumber.slice(-3);
+    if (!phoneNumber) return "";
+    return (
+      phoneNumber.slice(0, 4) +
+      "*".repeat(phoneNumber.length - 7) +
+      phoneNumber.slice(-3)
+    );
   }
 
-}
+  /**
+   * Gets the account completion status including verification and KYC document status
+   * @param {string} userId - User's unique ID
+   * @returns {Promise<Object>} Account completion details
+   */
 
+  static async getAccountCompletionStatus(userId) {
+    try {
+      //first get the users basic information
+      const userQuery = `
+      SELECT 
+         email_verified,
+         phone_verified,
+         account_status
+      FROM users
+      WHERE user_id = $1
+         
+      `;
+      const userResult = await query(userQuery, [userId]);
+      if (userResult.rows.length === 0) {
+        throw new Error("User not found");
+      }
+      const user = userResult.rows[0];
+
+      // Query KYC documents with detailed status
+      const kycQuery = `
+      SELECT 
+          document_type, 
+          verification_status,
+          CASE 
+              WHEN verification_status = 'verified' THEN true
+              ELSE false
+          END as is_verified
+      FROM kyc_documents
+      WHERE user_id = $1;
+  `;
+      const kycResult = await query(kycQuery, [userId]);
+      // Check required document types
+      const requiredDocTypes = ["national_id", "passport", "drivers_license"];
+      const submittedDocTypes = kycResult.rows.map((doc) => doc.document_type);
+      // Check which required docs are missing
+      const missingDocTypes = requiredDocTypes.filter(
+        (docType) => !submittedDocTypes.includes(docType)
+      );
+      // Check if at least one document is verified
+      const hasVerifiedDoc = kycResult.rows.some((doc) => doc.is_verified);
+      // Calculate overall status
+      const isContactVerified = user.email_verified || user.phone_verified;
+      const hasSubmittedDocs = kycResult.rows.length > 0;
+      // Calculate completion percentage (25% for contact verification, 75% for documents)
+      let completionPercentage = 0;
+      if (isContactVerified) completionPercentage += 25;
+      if (hasSubmittedDocs) {
+        // Add up to 75% based on document count and verification
+        const maxDocsNeeded = 1; // Only requiring one valid document
+        const docsSubmittedPercentage =
+          (Math.min(kycResult.rows.length, maxDocsNeeded) / maxDocsNeeded) * 50;
+        completionPercentage += docsSubmittedPercentage;
+
+        if (hasVerifiedDoc) completionPercentage += 25;
+      }
+      return {
+        isVerified: isContactVerified,
+        accountStatus: user.account_status,
+        kycStatus: {
+          hasSubmittedDocuments: hasSubmittedDocs,
+          hasVerifiedDocuments: hasVerifiedDoc,
+          submittedDocuments: kycResult.rows.map((doc) => ({
+            type: doc.document_type,
+            status: doc.verification_status,
+          })),
+          missingDocumentTypes: missingDocTypes,
+          requiresAtLeastOneDocument:
+            missingDocTypes.length === requiredDocTypes.length,
+        },
+        completionPercentage: Math.round(completionPercentage),
+        isComplete:
+          isContactVerified &&
+          hasVerifiedDoc &&
+          user.account_status === "active",
+      };
+    } catch (error) {
+      throw new Error(
+        `Failed to get account completion status: ${error.message}`
+      );
+    }
+  }
+}
 
 module.exports = User;
