@@ -33,6 +33,15 @@ class AuthController {
                     message: 'User already exists'
                 });
             }
+            //check for exist  phone number
+            const existingUserPhone  = await User.findByPhoneNumber(userData.phoneNumber);
+            if(existingUserPhone )
+            {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Phone number already exists to another user'
+                });
+            }
 
             const user = await User.create(userData);
 

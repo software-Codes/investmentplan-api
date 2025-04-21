@@ -1,0 +1,24 @@
+name: infrah-api-investment
+id: 'ari:cloud:compass:bbb2c47f-1a28-43ec-9dff-44ff10007b0b:component/7d407279-e838-454e-9226-6d99a4a73bc6/9361c382-dff4-400a-aba4-5e2958c9cf7b'
+slug: infrah-api-investment
+description: null
+configVersion: 1
+typeId: SERVICE
+ownerId: 'ari:cloud:identity::team/9c441970-0236-4199-b5ba-d987655032ce'
+fields:
+  tier: 4
+  isMonorepoProject: false
+links:
+  - name: null
+    type: REPOSITORY
+    url: 'https://github.com/investment-project/infrah-api-investment'
+  - name: ''
+    type: PROJECT
+    url: 'https://collinsentrepreneur-1724914603518.atlassian.net/browse/KAN'
+relationships: {}
+labels:
+  - 'source:github'
+customFields: null
+
+# Learn more about formatting compass.yml:
+# https://go.atlassian.com/compass-yml-format

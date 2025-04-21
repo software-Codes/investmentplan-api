@@ -31,12 +31,8 @@ class OTP {
    * @throws {Error} Throws an error if OTP generation or database operation fails.
    */
   // models/OTP.js
-  static async generate(otpData) {
-    // Check if the purpose is registration
-    if (otpData.purpose !== 'registration') {
-      throw new Error('OTP can only be generated for registration');
-    }
 
+  static async generate(otpData) {
     // Invalidate previous OTPs for the same purpose and identifier
     if (otpData.userId) {
       await this.invalidatePreviousOTPs(otpData.userId, otpData.purpose);
@@ -61,21 +57,22 @@ class OTP {
 
     // SQL query to insert the new OTP record into the database
     const queryText = `
-  INSERT INTO otp_records (
-    otp_id, user_id, phone_number, otp_code, otp_purpose, 
-    delivery_method, expires_at, created_at
-  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-  RETURNING *;
-`;
+    INSERT INTO otp_records (
+      otp_id, user_id, email, phone_number, otp_code, otp_purpose, 
+      delivery_method, expires_at, created_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    RETURNING *;
+  `;
 
     // Values to be inserted into the database
     const values = [
       otpId, // Unique OTP ID
       otpData.userId || null, // User ID (if applicable)
-      otpData.phoneNumber, // Phone number
+      otpData.email || null, // Email address (if applicable)
+      otpData.phoneNumber || null, // Phone number (if applicable)
       otpCode, // Generated OTP code
       otpData.purpose, // Purpose of the OTP
-      otpData.deliveryMethod, // Delivery method (sms)
+      otpData.deliveryMethod, // Delivery method (email or sms)
       expiryDate, // Expiry date and time
       currentDate // Current timestamp
     ];
@@ -84,8 +81,8 @@ class OTP {
       // Execute the query to insert the OTP record
       const res = await query(queryText, values);
 
-      // Send the OTP to the user via SMS
-      await this.sendOTP(otpData.deliveryMethod, otpData.phoneNumber, otpCode, otpData.purpose);
+      // Send the OTP to the user via the specified delivery method
+      await this.sendOTP(otpData.deliveryMethod, otpData.email || otpData.phoneNumber, otpCode, otpData.purpose);
 
       // Return the generated OTP record
       return res.rows[0];
@@ -107,17 +104,17 @@ class OTP {
   // models/OTP.js
   static async sendOTP(method, destination, code, purpose) {
     try {
-        if (method === 'email') {
-            await OtpEmailService.sendOtp(destination, code, purpose);
-        } else if (method === 'sms') {
-            await OtpSmsService.sendOtp(destination, code, purpose);
-        } else {
-            throw new Error(`Unsupported delivery method: ${method}`);
-        }
+      if (method === 'email') {
+        await OtpEmailService.sendOtp(destination, code, purpose);
+      } else if (method === 'sms') {
+        await OtpSmsService.sendOtp(destination, code, purpose);
+      } else {
+        throw new Error(`Unsupported delivery method: ${method}`);
+      }
     } catch (error) {
-        throw new Error(`Failed to send OTP: ${error.message}`);
+      throw new Error(`Failed to send OTP: ${error.message}`);
     }
-}
+  }
   /**
    * Verifies a one-time password (OTP) for a user.
    * @param {Object} verifyData - Data required for OTP verification.
