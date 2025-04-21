@@ -28,13 +28,12 @@ router.post(
     }
 );
 router.post(
-    '/resend-verification',
-    otpLimiter,
-    (req, res, next) => {
-        authController.resendVerification(req, res, next);
-    }
+  '/resend-verification',
+  otpLimiter,
+  (req, res, next) => {
+    authController.resendVerification(req, res, next);
+  }
 );
-
 // OTP verification route with validation
 router.post(
     '/verify-otp',
@@ -68,5 +67,20 @@ router.post(
         authController.completeRecovery(req, res, next);
     }
 );
+
+// Password reset routes
+router.post(
+    '/initiate-password-reset',
+    (req, res, next) => {
+      authController.initiatePasswordReset(req, res, next);
+    }
+  );
+  
+  router.post(
+    '/complete-password-reset',
+    (req, res, next) => {
+      authController.completePasswordReset(req, res, next);
+    }
+  );
 
 module.exports = router;

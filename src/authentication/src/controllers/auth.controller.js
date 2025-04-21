@@ -2,6 +2,8 @@ const User = require("../models/User");
 const OTP = require("../models/OTP");
 const jwt = require("jsonwebtoken");
 const { logger } = require("../utils/logger");
+const { validate } = require("express-validation");
+const { error} = require("../utils/response.util");
 
 /**
  * @file auth.service.js
@@ -179,101 +181,27 @@ class AuthController {
       });
     }
   }
-  /**
- * Resend verification OTP for a user who hasn't verified yet
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next middleware function
- * @returns {Promise<void>}
- */
-
-  static async resendVerification (req, res, next)
-  {
-    try {
-        const { userId } = req.body;
-        
-        if (!userId) {
-            return res.status(400).json({
-                success: false,
-                message: 'User ID is required'
-            });
-        }
-            // Find user
-            const user = await User.findById(userId);
-            if (!user) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'User not found'
-                });
-            }
-               // Check if already verified
-        if (user.email_verified || user.phone_verified) {
-            return res.status(400).json({
-                success: false,
-                message: 'Account is already verified'
-            });
-        }
-          // Generate new OTP
-          const otpData = {
-            userId: user.user_id,
-            purpose: 'registration',
-            deliveryMethod: user.preferred_contact_method === 'email' ? 'email' : 'sms'
-        };
-        if (otpData.deliveryMethod === 'email') {
-            otpData.email = user.email;
-        } else {
-            otpData.phoneNumber = user.phone_number;
-        }
-        await OTP.generate(otpData);
-        return res.status(200).json({
-            success: true,
-            message: `Verification code sent via ${otpData.deliveryMethod}`,
-            userId: user.user_id
-        });
-        
-        
-    } catch (error) {
-        next(error);
-        console.error('Error in resendVerification:', error);
-        res.status(500).json({
-            success: false,
-            message: `Error in the resend email: ${error.message}`
-        });
-        
-    }
-
-  }
 
   /**
-   * Verify OTP code for login or other operations
-   * @param {Object} otpData - OTP verification data
-   * @param {string} otpData.userId - User's unique ID
-   * @param {string} otpData.otpCode - OTP code to verify
-   * @param {string} otpData.purpose - Purpose of the OTP (e.g., 'login', 'reset_password')
-   * @param {string} [otpData.ipAddress] - User's IP address
-   * @param {string} [otpData.userAgent] - User's browser/device information
-   * @returns {Promise<Object>} Verification result with token and session
+   * Resend verification OTP for a user who hasn't verified yet
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware function
+   * @returns {Promise<void>}
    */
-  static async verifyOtp(req, res, next) {
+  static async resendVerification(req, res, next) {
     try {
-      const otpData = req.body;
+      const { userId } = req.body;
 
-      // Verify OTP
-      const isVerified = await OTP.verify({
-        otpCode: otpData.otpCode,
-        purpose: otpData.purpose,
-        userId: otpData.userId,
-      });
-
-      if (!isVerified) {
+      if (!userId) {
         return res.status(400).json({
           success: false,
-          message: "Invalid or expired OTP code",
+          message: "User ID is required",
         });
       }
 
       // Find user
-      const user = await User.findById(otpData.userId);
+      const user = await User.findById(userId);
       if (!user) {
         return res.status(404).json({
           success: false,
@@ -281,26 +209,91 @@ class AuthController {
         });
       }
 
-      // Update verification status based on purpose
-      if (otpData.purpose === "registration") {
-        // Update the appropriate verification flag based on preferred contact method
+      // Check if already verified
+      if (user.email_verified || user.phone_verified) {
+        return res.status(400).json({
+          success: false,
+          message: "Account is already verified",
+        });
+      }
+
+      // Generate new OTP
+      const otpData = {
+        userId: user.user_id,
+        purpose: "registration",
+        deliveryMethod:
+          user.preferred_contact_method === "email" ? "email" : "sms",
+      };
+
+      if (otpData.deliveryMethod === "email") {
+        otpData.email = user.email;
+      } else {
+        otpData.phoneNumber = user.phone_number;
+      }
+
+      await OTP.generate(otpData);
+
+      return res.status(200).json({
+        success: true,
+        message: `Verification code sent via ${otpData.deliveryMethod}`,
+        userId: user.user_id,
+      });
+    } catch (error) {
+      logger.error(`Error in resendVerification: ${error.message}`, { error });
+      next(error);
+    }
+  }
+
+/**
+ * Verify OTP code for login or other operations
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ * @returns {Promise<Object>} Verification result with token and session
+ */
+static async verifyOtp(req, res, next) {
+    try {
+      const { userId, otpCode, purpose } = req.body;
+  
+      // Verify OTP using the OTP model
+      const isVerified = await OTP.verify({
+        userId,
+        otpCode,
+        purpose,
+      });
+  
+      if (!isVerified) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid or expired OTP code",
+        });
+      }
+  
+      // Find user
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+  
+      // Handle different OTP purposes
+      if (purpose === "registration") {
+        // Update verification status based on preferred contact method
         if (user.preferred_contact_method === "email") {
-          await User.updateVerificationStatus(user.user_id, {
-            emailVerified: true,
-          });
+          await User.updateVerificationStatus(userId, "email_verified", true);
         } else {
-          await User.updateVerificationStatus(user.user_id, {
-            phoneVerified: true,
-          });
+          await User.updateVerificationStatus(userId, "phone_verified", true);
         }
-
+  
         // Update account status to active
-        await User.updateAccountStatus(user.user_id, "active");
-
+        await User.updateAccountStatus(userId, "active");
+  
         return res.status(200).json({
           success: true,
           message: "Account verified successfully. You can now log in.",
-          user: {
+          data: {
             userId: user.user_id,
             fullName: user.full_name,
             email: user.email,
@@ -309,45 +302,61 @@ class AuthController {
             accountStatus: "active",
           },
         });
+      } else if (purpose === "reset_password") {
+        // Generate a temporary token for password reset
+        const tempToken = this.generateJwtToken(userId, null, 300); // 5-minute token
+  
+        return res.status(200).json({
+          success: true,
+          message: "OTP verified successfully. You can now reset your password.",
+          data: {
+            userId: user.user_id,
+            tempToken,
+          },
+        });
       } else {
-        // For other purposes like password reset, etc.
-        // Create session and return JWT token
+        // For other purposes like login, create a session and generate a token
         const session = await User.createSession(user.user_id, {
           ipAddress: req.ip,
           userAgent: req.headers["user-agent"],
         });
-
-        // Generate JWT token
+  
         const token = this.generateJwtToken(user.user_id, session.session_id);
-
+  
         // Get account completion status
         const accountCompletion = await User.getAccountCompletionStatus(
           user.user_id
         );
-
+  
         return res.status(200).json({
           success: true,
-          user: {
-            userId: user.user_id,
-            fullName: user.full_name,
-            email: user.email,
-            phoneNumber: user.phone_number,
-            preferredContactMethod: user.preferred_contact_method,
-            accountStatus: user.account_status,
-          },
-          accountCompletion,
-          token,
-          session: {
-            sessionId: session.session_id,
-            expiresAt: session.expires_at,
+          message: "OTP verified successfully.",
+          data: {
+            user: {
+              userId: user.user_id,
+              fullName: user.full_name,
+              email: user.email,
+              phoneNumber: user.phone_number,
+              preferredContactMethod: user.preferred_contact_method,
+              accountStatus: user.account_status,
+            },
+            accountCompletion,
+            token,
+            session: {
+              sessionId: session.session_id,
+              expiresAt: session.expires_at,
+            },
           },
         });
       }
-    } catch (error) {
-      next(error);
+    } catch (err) {
+      logger.error(`Error in verifyOtp: ${err.message}`, { error: err });
+      return res.status(500).json({
+        success: false,
+        message: `error occured while verifying the otp code${err.message}`
+      });
     }
-  }
-
+  } 
   /**
    * Logout user by invalidating session
    * @param {string} sessionId - Session ID to invalidate
@@ -523,6 +532,65 @@ class AuthController {
     } catch (error) {
       logger.error(`Token validation failed: ${error.message}`);
       throw new Error("Invalid or expired token");
+    }
+  }
+  /**
+ * Initiates the password reset process.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ * @returns {Promise<Object>} Result of initiating password reset
+ */
+static async initiatePasswordReset(req, res, next) {
+    try {
+      const { userId } = req.body;
+  
+      if (!userId) {
+        return next(error(new Error("User ID is required"), "User ID is required", 400));
+      }
+  
+      const result = await User.initiatePasswordReset(userId);
+  
+      return res.status(200).json(
+        success(
+          {
+            userId,
+            purpose: 'reset_password',
+            deliveryMethod: result.deliveryMethod
+          },
+          "Password reset initiated. OTP sent to your preferred contact method."
+        )
+      );
+    } catch (err) {
+      next(err);
+    }
+  }
+  
+  /**
+   * Completes the password reset process.
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware function
+   * @returns {Promise<Object>} Result of completing password reset
+   */
+  static async completePasswordReset(req, res, next) {
+    try {
+      const { userId, otpCode, newPassword } = req.body;
+  
+      if (!userId || !otpCode || !newPassword) {
+        return next(error(new Error("Missing required fields"), "Missing userId, otpCode, or newPassword", 400));
+      }
+  
+      const result = await User.completePasswordReset(userId, otpCode, newPassword);
+  
+      return res.status(200).json(
+        success(
+          result,
+          "Password reset successfully."
+        )
+      );
+    } catch (err) {
+      next(err);
     }
   }
 }

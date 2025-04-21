@@ -946,6 +946,62 @@ class User {
       );
     }
   }
+  /**
+ * Initiates the password reset process by generating a new OTP.
+ * @param {string} userId - The user's unique ID.
+ * @param {string} purpose - The purpose of the OTP (e.g., 'reset_password').
+ * @returns {Promise<Object>} The generated OTP record.
+ */
+static async initiatePasswordReset(userId, purpose = 'reset_password') {
+  // Find user
+  const user = await this.findById(userId);
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  // Generate new OTP
+  const otpData = {
+    userId,
+    purpose,
+    deliveryMethod: user.preferred_contact_method === 'email' ? 'email' : 'sms'
+  };
+
+  if (otpData.deliveryMethod === 'email') {
+    otpData.email = user.email;
+  } else {
+    otpData.phoneNumber = user.phone_number;
+  }
+
+  return await OTP.generate(otpData);
+}
+
+/**
+ * Completes the password reset process by verifying the OTP and updating the password.
+ * @param {string} userId - The user's unique ID.
+ * @param {string} otpCode - The OTP code received by the user.
+ * @param {string} newPassword - The new password to set.
+ * @returns {Promise<Object>} Result indicating success or failure.
+ */
+static async completePasswordReset(userId, otpCode, newPassword) {
+  // Verify OTP
+  const isVerified = await OTP.verify({
+    userId,
+    otpCode,
+    purpose: 'reset_password'
+  });
+
+  if (!isVerified) {
+    throw new Error("Invalid or expired OTP code");
+  }
+
+  // Update password
+  await this.changePassword(userId, newPassword);
+
+  return {
+    success: true,
+    message: "Password has been successfully reset"
+  };
+}
 }
 
 module.exports = User;

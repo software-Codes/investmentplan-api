@@ -11,8 +11,8 @@ const crypto = require("crypto");
 const database = require("./authentication/src/Config/neon-database");
 const setupDatabase = require("./authentication/src/Config/setupDatabase");
 const authRoutes = require("../src/authentication/src/routes/auth.routes"); // Import auth routes
-const { validateRegistration, validateLogin } = require("../src/authentication/src/middleware/validation.middleware"); // Import validation middleware
-const { loginLimiter, apiLimiter, otpLimiter } = require("../src/authentication/src/middleware/rate-limiter"); // Import rate limiting middleware
+// const { validateRegistration, validateLogin } = require("../src/authentication/src/middleware/validation.middleware"); // Import validation middleware
+// const { loginLimiter, apiLimiter, otpLimiter } = require("../src/authentication/src/middleware/rate-limiter"); // Import rate limiting middleware
 
 /**
  * Validate required environment variables with safe defaults
@@ -186,14 +186,14 @@ const createApp = () => {
       // Validate environment variables
       validateEnv();
 
-      // Database initialization
-      console.log("\n[Database] Initializing database schema...");
+      // // Database initialization
+      // console.log("\n[Database] Initializing database schema...");
       // await setupDatabase();
-      console.log("[Database] Schema initialized successfully");
+      // console.log("[Database] Schema initialized successfully");
 
-      // Establish database connection
-      await database.checkDatabaseConnection();
-      console.log("[Database] Connection verified\n");
+      // // Establish database connection
+      // await database.checkDatabaseConnection();
+      // console.log("[Database] Connection verified\n");
 
       // Configure application
       setupMiddleware();
