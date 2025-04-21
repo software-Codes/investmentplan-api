@@ -46,10 +46,11 @@ router.post(
 // Logout route protected by authentication
 router.post(
     '/logout',
+    authMiddleware, // Add authentication middleware
     (req, res, next) => {
-        authController.logout(req, res, next);
+      authController.logout(req, res, next);
     }
-);
+  );
 
 // Password recovery routes
 router.post(

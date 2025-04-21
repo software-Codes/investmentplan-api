@@ -83,7 +83,7 @@ class AuthController {
           preferredContactMethod: user.preferred_contact_method,
           accountStatus: user.account_status,
         },
-        message: `Verification code sent via ${deliveryMethod}`,
+        message: `Verification code sent via ${deliveryMethod} verify your account to be able to login and access the investment platform`,
       });
     } catch (error) {
       next(error);
@@ -362,23 +362,26 @@ static async verifyOtp(req, res, next) {
    * @param {string} sessionId - Session ID to invalidate
    * @returns {Promise<Object>} Logout result
    */
-  static async logout(sessionId) {
+  static async logout(req, res, next) {
     try {
+      const sessionId = req.user.sessionId;
       const isInvalidated = await User.invalidateSession(sessionId);
+      
       if (!isInvalidated) {
-        throw new Error("Session not found or already invalidated");
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Session not found or already invalidated' 
+        });
       }
-
-      return {
-        success: true,
-        message: "Logged out successfully",
-      };
+  
+      res.status(200).json({ 
+        success: true, 
+        message: 'Logged out successfully' 
+      });
     } catch (error) {
-      logger.error(`Logout failed: ${error.message}`);
-      throw new Error(`Logout failed: ${error.message}`);
+      next(error);
     }
   }
-
   /**
    * Logout from all sessions except current one
    * @param {string} userId - User's unique ID

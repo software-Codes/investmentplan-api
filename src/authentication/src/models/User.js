@@ -737,33 +737,17 @@ class User {
    */
   static async validateSession(sessionId) {
     const queryText = `
-    SELECT 
-      s.session_id, 
-      s.user_id, 
-      s.expires_at,
-      u.account_status
-    FROM 
-      user_sessions s
-    JOIN 
-      users u ON s.user_id = u.user_id
-    WHERE 
-      s.session_id = $1 
-      AND s.expires_at > NOW()
-      AND s.is_active = true;
-  `;
-
+      SELECT 
+        s.session_id, 
+        s.user_id, 
+        s.expires_at,
+        s.is_active
+      FROM user_sessions s
+      WHERE s.session_id = $1;
+    `;
+  
     const res = await query(queryText, [sessionId]);
-    if (res.rows.length === 0) {
-      return null;
-    }
-
-    // Update the last active timestamp
-    await query(
-      `UPDATE user_sessions SET last_active_at = $1 WHERE session_id = $2`,
-      [new Date().toISOString(), sessionId]
-    );
-
-    return res.rows[0];
+    return res.rows[0] || null;
   }
   /**
    * Invalidates a user session (logout)
