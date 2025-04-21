@@ -745,7 +745,7 @@ class User {
       FROM user_sessions s
       WHERE s.session_id = $1;
     `;
-  
+
     const res = await query(queryText, [sessionId]);
     return res.rows[0] || null;
   }
@@ -931,130 +931,202 @@ class User {
     }
   }
   /**
- * Initiates the password reset process by generating a new OTP.
- * @param {string} userId - The user's unique ID.
- * @param {string} purpose - The purpose of the OTP (e.g., 'reset_password').
- * @returns {Promise<Object>} The generated OTP record.
- */
-static async initiatePasswordReset(userId, purpose = 'reset_password') {
-  // Find user
-  const user = await this.findById(userId);
-  if (!user) {
-    throw new Error("User not found");
+   * Initiates the password reset process by generating a new OTP.
+   * @param {string} userId - The user's unique ID.
+   * @param {string} purpose - The purpose of the OTP (e.g., 'reset_password').
+   * @returns {Promise<Object>} The generated OTP record.
+   */
+  static async initiatePasswordReset(userId, purpose = "reset_password") {
+    // Find user
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Generate new OTP
+    const otpData = {
+      userId,
+      purpose,
+      deliveryMethod:
+        user.preferred_contact_method === "email" ? "email" : "sms",
+    };
+
+    if (otpData.deliveryMethod === "email") {
+      otpData.email = user.email;
+    } else {
+      otpData.phoneNumber = user.phone_number;
+    }
+
+    return await OTP.generate(otpData);
   }
 
-  // Generate new OTP
-  const otpData = {
-    userId,
-    purpose,
-    deliveryMethod: user.preferred_contact_method === 'email' ? 'email' : 'sms'
-  };
+  /**
+   * Completes the password reset process by verifying the OTP and updating the password.
+   * @param {string} userId - The user's unique ID.
+   * @param {string} otpCode - The OTP code received by the user.
+   * @param {string} newPassword - The new password to set.
+   * @returns {Promise<Object>} Result indicating success or failure.
+   */
+  static async completePasswordReset(userId, otpCode, newPassword) {
+    // Verify OTP
+    const isVerified = await OTP.verify({
+      userId,
+      otpCode,
+      purpose: "reset_password",
+    });
 
-  if (otpData.deliveryMethod === 'email') {
-    otpData.email = user.email;
-  } else {
-    otpData.phoneNumber = user.phone_number;
+    if (!isVerified) {
+      throw new Error("Invalid or expired OTP code");
+    }
+
+    // Update password
+    await this.changePassword(userId, newPassword);
+
+    return {
+      success: true,
+      message: "Password has been successfully reset",
+    };
   }
+  /**
+   * Deletes a user account and all associated data.
+   *
+   * This function performs the following steps:
+   * 1. Verifies the user's password to ensure the request is authorized.
+   * 2. Invalidates all active sessions for the user by marking them as inactive.
+   * 3. Resets the user's wallet balances (account, trading, and referral) to zero.
+   * 4. Deletes the user's KYC (Know Your Customer) documents from the database.
+   * 5. Deletes the user's account record from the database.
+   *
+   * The operation is performed within a database transaction to ensure atomicity.
+   * If any step fails, the transaction is rolled back to maintain data integrity.
+   *
+   * @param {string} userId - The unique ID of the user whose account is to be deleted.
+   * @param {string} password - The user's password for verification.
+   * @returns {Promise<boolean>} Returns `true` if the account was successfully deleted, otherwise `false`.
+   * @throws {Error} Throws an error if the user is not found, the password is invalid, or the deletion process fails.
+   */
+  static async deleteAccount(userId, password) {
+    // First, get the user to verify password
+    const userQuery = `
+        SELECT password_hash 
+        FROM users 
+        WHERE user_id = $1;
+    `;
 
-  return await OTP.generate(otpData);
-}
+    const userResult = await query(userQuery, [userId]);
+    if (userResult.rows.length === 0) {
+      throw new Error("User not found");
+    }
 
-/**
- * Completes the password reset process by verifying the OTP and updating the password.
- * @param {string} userId - The user's unique ID.
- * @param {string} otpCode - The OTP code received by the user.
- * @param {string} newPassword - The new password to set.
- * @returns {Promise<Object>} Result indicating success or failure.
- */
-static async completePasswordReset(userId, otpCode, newPassword) {
-  // Verify OTP
-  const isVerified = await OTP.verify({
-    userId,
-    otpCode,
-    purpose: 'reset_password'
-  });
+    const storedPasswordHash = userResult.rows[0].password_hash;
 
-  if (!isVerified) {
-    throw new Error("Invalid or expired OTP code");
+    // Verify password
+    const isPasswordValid = await bcrypt.compare(password, storedPasswordHash);
+    if (!isPasswordValid) {
+      throw new Error("Invalid password");
+    }
+
+    // Begin transaction
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      // Invalidate all sessions
+      await client.query(
+        `
+            UPDATE user_sessions 
+            SET is_active = false, updated_at = $1
+            WHERE user_id = $2
+        `,
+        [new Date().toISOString(), userId]
+      );
+
+      // Reset wallet balances to zero
+      await client.query(
+        `
+            UPDATE users
+            SET 
+                account_balance = 0.00,
+                trading_balance = 0.00,
+                referral_balance = 0.00,
+                updated_at = $1
+            WHERE user_id = $2
+        `,
+        [new Date().toISOString(), userId]
+      );
+
+      // Delete KYC documents
+      await client.query(
+        `
+            DELETE FROM kyc_documents 
+            WHERE user_id = $1
+        `,
+        [userId]
+      );
+
+      // Delete user records
+      const deleteResult = await client.query(
+        `
+            DELETE FROM users 
+            WHERE user_id = $1
+            RETURNING user_id
+        `,
+        [userId]
+      );
+
+      await client.query("COMMIT");
+
+      return deleteResult.rows.length > 0;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw new Error(`Failed to delete account: ${error.message}`);
+    } finally {
+      client.release();
+    }
   }
-
-  // Update password
-  await this.changePassword(userId, newPassword);
-
-  return {
-    success: true,
-    message: "Password has been successfully reset"
-  };
-}
-/**
- * Delete a user account
- * @param {string} userId - User's UUID
- * @param {string} password - User's password for verification
- * @returns {Promise<boolean>} True if account was deleted successfully
- * @throws {Error} If deletion fails or password is invalid
- */
-static async deleteAccount(userId, password) {
-  // First, get the user to verify password
-  const userQuery = `
-    SELECT password_hash 
-    FROM users 
-    WHERE user_id = $1;
+  /**
+   * Retrieves the wallet balances for a user.
+   *
+   * This function fetches the account, trading, and referral balances for a user from the database.
+   * If the user is not found, it returns default balances of zero for all wallet categories.
+   *
+   * @param {string} userId - The unique ID of the user whose wallet balances are to be retrieved.
+   * @returns {Promise<Object>} An object containing the wallet balances:
+   * - `account_balance`: The user's account balance as a string.
+   * - `trading_balance`: The user's trading balance as a string.
+   * - `referral_balance`: The user's referral balance as a string.
+   * @throws {Error} Throws an error if the database query fails.
+   */
+  static async getWalletBalances(userId) {
+    const queryText = `
+      SELECT 
+          account_balance, 
+          trading_balance, 
+          referral_balance
+      FROM users
+      WHERE user_id = $1;
   `;
-  
-  const userResult = await query(userQuery, [userId]);
-  if (userResult.rows.length === 0) {
-    throw new Error("User not found");
+
+    try {
+      // Execute the query to fetch wallet balances
+      const res = await query(queryText, [userId]);
+
+      if (res.rows.length === 0) {
+        // If no user is found, return default zero balances
+        return {
+          account_balance: "0.00",
+          trading_balance: "0.00",
+          referral_balance: "0.00",
+        };
+      }
+
+      // Return the wallet balances from the database
+      return res.rows[0];
+    } catch (error) {
+      // Log and rethrow the error for further handling
+      throw new Error(`Failed to retrieve wallet balances: ${error.message}`);
+    }
   }
-  
-  const storedPasswordHash = userResult.rows[0].password_hash;
-  
-  // Verify password
-  const isPasswordValid = await bcrypt.compare(password, storedPasswordHash);
-  if (!isPasswordValid) {
-    throw new Error("Invalid password");
-  }
-  
-  // Begin transaction
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    
-    // Invalidate all sessions
-    await client.query(`
-      UPDATE user_sessions 
-      SET is_active = false, updated_at = $1
-      WHERE user_id = $2
-    `, [new Date().toISOString(), userId]);
-    
-    // Delete user wallet records
-    await client.query(`
-      DELETE FROM user_wallets 
-      WHERE user_id = $1
-    `, [userId]);
-    
-    // Delete KYC documents
-    await client.query(`
-      DELETE FROM kyc_documents 
-      WHERE user_id = $1
-    `, [userId]);
-    
-    // Delete user records
-    const deleteResult = await client.query(`
-      DELETE FROM users 
-      WHERE user_id = $1
-      RETURNING user_id
-    `, [userId]);
-    
-    await client.query('COMMIT');
-    
-    return deleteResult.rows.length > 0;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw new Error(`Failed to delete account: ${error.message}`);
-  } finally {
-    client.release();
-  }
-}
 }
 
 module.exports = User;
