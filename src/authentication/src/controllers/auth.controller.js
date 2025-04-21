@@ -3,8 +3,8 @@ const OTP = require("../models/OTP");
 const jwt = require("jsonwebtoken");
 const { logger } = require("../utils/logger");
 const { validate } = require("express-validation");
-const { error} = require("../utils/response.util");
-
+const { error } = require("../utils/response.util");
+const { addTokenToBlacklist } = require("../helpers/blacklist-auth");
 /**
  * @file auth.service.js
  * @description Authentication service that integrates User and OTP models for a complete auth flow
@@ -244,31 +244,31 @@ class AuthController {
     }
   }
 
-/**
- * Verify OTP code for login or other operations
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next middleware function
- * @returns {Promise<Object>} Verification result with token and session
- */
-static async verifyOtp(req, res, next) {
+  /**
+   * Verify OTP code for login or other operations
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware function
+   * @returns {Promise<Object>} Verification result with token and session
+   */
+  static async verifyOtp(req, res, next) {
     try {
       const { userId, otpCode, purpose } = req.body;
-  
+
       // Verify OTP using the OTP model
       const isVerified = await OTP.verify({
         userId,
         otpCode,
         purpose,
       });
-  
+
       if (!isVerified) {
         return res.status(400).json({
           success: false,
           message: "Invalid or expired OTP code",
         });
       }
-  
+
       // Find user
       const user = await User.findById(userId);
       if (!user) {
@@ -277,7 +277,7 @@ static async verifyOtp(req, res, next) {
           message: "User not found",
         });
       }
-  
+
       // Handle different OTP purposes
       if (purpose === "registration") {
         // Update verification status based on preferred contact method
@@ -286,10 +286,10 @@ static async verifyOtp(req, res, next) {
         } else {
           await User.updateVerificationStatus(userId, "phone_verified", true);
         }
-  
+
         // Update account status to active
         await User.updateAccountStatus(userId, "active");
-  
+
         return res.status(200).json({
           success: true,
           message: "Account verified successfully. You can now log in.",
@@ -305,10 +305,11 @@ static async verifyOtp(req, res, next) {
       } else if (purpose === "reset_password") {
         // Generate a temporary token for password reset
         const tempToken = this.generateJwtToken(userId, null, 300); // 5-minute token
-  
+
         return res.status(200).json({
           success: true,
-          message: "OTP verified successfully. You can now reset your password.",
+          message:
+            "OTP verified successfully. You can now reset your password.",
           data: {
             userId: user.user_id,
             tempToken,
@@ -320,14 +321,14 @@ static async verifyOtp(req, res, next) {
           ipAddress: req.ip,
           userAgent: req.headers["user-agent"],
         });
-  
+
         const token = this.generateJwtToken(user.user_id, session.session_id);
-  
+
         // Get account completion status
         const accountCompletion = await User.getAccountCompletionStatus(
           user.user_id
         );
-  
+
         return res.status(200).json({
           success: true,
           message: "OTP verified successfully.",
@@ -353,33 +354,67 @@ static async verifyOtp(req, res, next) {
       logger.error(`Error in verifyOtp: ${err.message}`, { error: err });
       return res.status(500).json({
         success: false,
-        message: `error occured while verifying the otp code${err.message}`
+        message: `error occured while verifying the otp code${err.message}`,
       });
     }
-  } 
+  }
   /**
    * Logout user by invalidating session
    * @param {string} sessionId - Session ID to invalidate
    * @returns {Promise<Object>} Logout result
    */
+  // Update AuthController.logout method
   static async logout(req, res, next) {
     try {
       const sessionId = req.user.sessionId;
+      const token = req.token;
+
+      // Invalidate the session in the database
       const isInvalidated = await User.invalidateSession(sessionId);
-      
+
+      // Calculate token expiry time (default to 1 hour)
+      const tokenExp = req.user.exp
+        ? req.user.exp - Math.floor(Date.now() / 1000)
+        : 3600;
+
+      // Add token to blacklist with expiry
+      addTokenToBlacklist(token, tokenExp);
+
       if (!isInvalidated) {
-        return res.status(404).json({ 
-          success: false, 
-          message: 'Session not found or already invalidated' 
+        logger.warn(
+          `Logout failed: Session not found or already invalidated for sessionId: ${sessionId}`
+        );
+        return res.status(404).json({
+          success: false,
+          message:
+            "Session not found or already invalidated. Please log in again if necessary.",
         });
       }
-  
-      res.status(200).json({ 
-        success: true, 
-        message: 'Logged out successfully' 
+
+      // Log successful logout
+      logger.info(
+        `User ${req.user.userId} logged out successfully. Session ID: ${sessionId}`
+      );
+
+      // Notify the user of successful logout
+      return res.status(200).json({
+        success: true,
+        message: "You have been logged out successfully.",
       });
     } catch (error) {
-      next(error);
+      // Log the error for developer alert
+      logger.error(
+        `Logout error for user ${req.user?.userId || "unknown"}: ${
+          error.message
+        }`,
+        { error }
+      );
+
+      // Notify the user of an internal server error
+      return res.status(500).json({
+        success: false,
+        message: "An error occurred while logging out. Please try again later.",
+      });
     }
   }
   /**
@@ -388,20 +423,24 @@ static async verifyOtp(req, res, next) {
    * @param {string} currentSessionId - Current session ID to preserve
    * @returns {Promise<Object>} Logout result with count of invalidated sessions
    */
-  static async logoutAll(userId, currentSessionId) {
+  static async logoutAllDevices(req, res, next) {
     try {
-      const count = await User.invalidateAllOtherSessions(
+      const userId = req.user.userId;
+      const currentSessionId = req.user.sessionId;
+
+      const result = await User.invalidateAllOtherSessions(
         userId,
         currentSessionId
       );
-      return {
+
+      return res.status(200).json({
         success: true,
-        message: `Invalidated ${count} sessions`,
-        invalidatedSessions: count,
-      };
+        message: `Successfully logged out from ${result} other devices`,
+        invalidatedSessions: result,
+      });
     } catch (error) {
-      logger.error(`Logout all failed: ${error.message}`);
-      throw new Error(`Logout all failed: ${error.message}`);
+      logger.error(`Logout all devices failed: ${error.message}`);
+      next(error);
     }
   }
 
@@ -538,28 +577,30 @@ static async verifyOtp(req, res, next) {
     }
   }
   /**
- * Initiates the password reset process.
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next middleware function
- * @returns {Promise<Object>} Result of initiating password reset
- */
-static async initiatePasswordReset(req, res, next) {
+   * Initiates the password reset process.
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware function
+   * @returns {Promise<Object>} Result of initiating password reset
+   */
+  static async initiatePasswordReset(req, res, next) {
     try {
       const { userId } = req.body;
-  
+
       if (!userId) {
-        return next(error(new Error("User ID is required"), "User ID is required", 400));
+        return next(
+          error(new Error("User ID is required"), "User ID is required", 400)
+        );
       }
-  
+
       const result = await User.initiatePasswordReset(userId);
-  
+
       return res.status(200).json(
         success(
           {
             userId,
-            purpose: 'reset_password',
-            deliveryMethod: result.deliveryMethod
+            purpose: "reset_password",
+            deliveryMethod: result.deliveryMethod,
           },
           "Password reset initiated. OTP sent to your preferred contact method."
         )
@@ -568,7 +609,7 @@ static async initiatePasswordReset(req, res, next) {
       next(err);
     }
   }
-  
+
   /**
    * Completes the password reset process.
    * @param {Object} req - Express request object
@@ -579,21 +620,65 @@ static async initiatePasswordReset(req, res, next) {
   static async completePasswordReset(req, res, next) {
     try {
       const { userId, otpCode, newPassword } = req.body;
-  
+
       if (!userId || !otpCode || !newPassword) {
-        return next(error(new Error("Missing required fields"), "Missing userId, otpCode, or newPassword", 400));
+        return next(
+          error(
+            new Error("Missing required fields"),
+            "Missing userId, otpCode, or newPassword",
+            400
+          )
+        );
       }
-  
-      const result = await User.completePasswordReset(userId, otpCode, newPassword);
-  
-      return res.status(200).json(
-        success(
-          result,
-          "Password reset successfully."
-        )
+
+      const result = await User.completePasswordReset(
+        userId,
+        otpCode,
+        newPassword
       );
+
+      return res
+        .status(200)
+        .json(success(result, "Password reset successfully."));
     } catch (err) {
       next(err);
+    }
+  }
+  //get user details
+  static async getCurrentUser(req, res, next) {
+    try {
+      const userId = req.user.userId;
+
+      // Get user info
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      // Get account completion status
+      const accountCompletion = await User.getAccountCompletionStatus(userId);
+
+      return res.status(200).json({
+        success: true,
+        user: {
+          userId: user.user_id,
+          fullName: user.full_name,
+          email: user.email,
+          phoneNumber: user.phone_number,
+          preferredContactMethod: user.preferred_contact_method,
+          accountStatus: user.account_status,
+          emailVerified: user.email_verified,
+          phoneVerified: user.phone_verified,
+          createdAt: user.created_at,
+          lastLogin: user.last_login_at,
+        },
+        accountCompletion,
+      });
+    } catch (error) {
+      next(error);
     }
   }
 }

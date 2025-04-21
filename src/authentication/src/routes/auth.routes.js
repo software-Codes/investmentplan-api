@@ -4,6 +4,7 @@ const router = express.Router();
 const authController = require('../controllers/auth.controller');
 const { validateRegistration, validateLogin, validateOtpVerification } = require('../middleware/validation.middleware');
 const { loginLimiter, otpLimiter, apiLimiter } = require('../middleware/rate-limiter');
+const {authenticate} = require("../middleware/auth.middleware");
 
 // Apply general rate limiting to all routes
 router.use(apiLimiter);
@@ -46,11 +47,18 @@ router.post(
 // Logout route protected by authentication
 router.post(
     '/logout',
-    authMiddleware, // Add authentication middleware
+    authenticate, // Changed from authMiddleware to authenticate
     (req, res, next) => {
       authController.logout(req, res, next);
     }
-  );
+);
+router.post(
+    '/logout-all',
+    authenticate,
+    (req, res, next) => {
+      authController.logoutAllDevices(req, res, next);
+    }
+);
 
 // Password recovery routes
 router.post(
@@ -83,5 +91,22 @@ router.post(
       authController.completePasswordReset(req, res, next);
     }
   );
+  //deleting account
+  router.delete(
+    '/delete-account',
+    authenticate,
+    (req, res, next) => {
+      authController.deleteAccount(req, res, next);
+    }
+    
+);
+//get user details
+router.get(
+    '/me',
+    authenticate,
+    (req, res, next) => {
+      authController.getCurrentUser(req, res, next);
+    }
+);
 
 module.exports = router;

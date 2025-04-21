@@ -986,6 +986,75 @@ static async completePasswordReset(userId, otpCode, newPassword) {
     message: "Password has been successfully reset"
   };
 }
+/**
+ * Delete a user account
+ * @param {string} userId - User's UUID
+ * @param {string} password - User's password for verification
+ * @returns {Promise<boolean>} True if account was deleted successfully
+ * @throws {Error} If deletion fails or password is invalid
+ */
+static async deleteAccount(userId, password) {
+  // First, get the user to verify password
+  const userQuery = `
+    SELECT password_hash 
+    FROM users 
+    WHERE user_id = $1;
+  `;
+  
+  const userResult = await query(userQuery, [userId]);
+  if (userResult.rows.length === 0) {
+    throw new Error("User not found");
+  }
+  
+  const storedPasswordHash = userResult.rows[0].password_hash;
+  
+  // Verify password
+  const isPasswordValid = await bcrypt.compare(password, storedPasswordHash);
+  if (!isPasswordValid) {
+    throw new Error("Invalid password");
+  }
+  
+  // Begin transaction
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    // Invalidate all sessions
+    await client.query(`
+      UPDATE user_sessions 
+      SET is_active = false, updated_at = $1
+      WHERE user_id = $2
+    `, [new Date().toISOString(), userId]);
+    
+    // Delete user wallet records
+    await client.query(`
+      DELETE FROM user_wallets 
+      WHERE user_id = $1
+    `, [userId]);
+    
+    // Delete KYC documents
+    await client.query(`
+      DELETE FROM kyc_documents 
+      WHERE user_id = $1
+    `, [userId]);
+    
+    // Delete user records
+    const deleteResult = await client.query(`
+      DELETE FROM users 
+      WHERE user_id = $1
+      RETURNING user_id
+    `, [userId]);
+    
+    await client.query('COMMIT');
+    
+    return deleteResult.rows.length > 0;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw new Error(`Failed to delete account: ${error.message}`);
+  } finally {
+    client.release();
+  }
+}
 }
 
 module.exports = User;
