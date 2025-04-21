@@ -27,6 +27,13 @@ router.post(
         authController.login(req, res, next);
     }
 );
+router.post(
+    '/resend-verification',
+    otpLimiter,
+    (req, res, next) => {
+        authController.resendVerification(req, res, next);
+    }
+);
 
 // OTP verification route with validation
 router.post(
