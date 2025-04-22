@@ -387,7 +387,7 @@ class AuthController {
         return res.status(404).json({
           success: false,
           message: `session invalidated or not found ${error.message}`,
-                    });
+        });
       }
 
       // Log successful logout
@@ -576,73 +576,91 @@ class AuthController {
     }
   }
   /**
-   * Initiates the password reset process.
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   * @param {Function} next - Express next middleware function
-   * @returns {Promise<Object>} Result of initiating password reset
+   * Initiates the password reset process by generating an OTP.
+   *
+   * This function validates the provided user ID, generates an OTP for password reset,
+   * and sends it to the user's preferred contact method (email or phone).
+   *
+   * @param {Object} req - Express request object.
+   * @param {Object} res - Express response object.
+   * @param {Function} next - Express next middleware function.
+   * @returns {Promise<void>} Sends a JSON response with the result of the operation.
+   *
+   * @throws {Error} Throws an error if the user ID is missing or if the password reset initiation fails.
    */
   static async initiatePasswordReset(req, res, next) {
     try {
       const { userId } = req.body;
 
+      // Validate that the user ID is provided
       if (!userId) {
-        return next(
-          error(new Error("User ID is required"), "User ID is required", 400)
-        );
+        return next(new Error("User ID is required"));
       }
 
+      // Initiate the password reset process
       const result = await User.initiatePasswordReset(userId);
 
-      return res.status(200).json(
-        success(
-          {
-            userId,
-            purpose: "reset_password",
-            deliveryMethod: result.deliveryMethod,
-          },
-          "Password reset initiated. OTP sent to your preferred contact method."
-        )
-      );
-    } catch (err) {
-      next(err);
+      // Respond with success and OTP delivery details
+      return res.status(200).json({
+        success: true,
+        message:
+          "Password reset initiated. OTP sent to your preferred contact method.",
+        data: {
+          userId: result.userId,
+          method: result.method,
+          destination: result.destination,
+        },
+      });
+    } catch (error) {
+      // Pass the error to the next middleware
+      next(error);
     }
   }
 
   /**
-   * Completes the password reset process.
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   * @param {Function} next - Express next middleware function
-   * @returns {Promise<Object>} Result of completing password reset
+   * Completes the password reset process by verifying the OTP and updating the password.
+   *
+   * This function validates the provided user ID, OTP code, and new password.
+   * It verifies the OTP and updates the user's password in the database.
+   *
+   * @param {Object} req - Express request object.
+   * @param {Object} res - Express response object.
+   * @param {Function} next - Express next middleware function.
+   * @returns {Promise<void>} Sends a JSON response with the result of the operation.
+   *
+   * @throws {Error} Throws an error if any required fields are missing or if the password reset process fails.
    */
   static async completePasswordReset(req, res, next) {
     try {
       const { userId, otpCode, newPassword } = req.body;
 
+      // Validate that all required fields are provided
       if (!userId || !otpCode || !newPassword) {
-        return next(
-          error(
-            new Error("Missing required fields"),
-            "Missing userId, otpCode, or newPassword",
-            400
-          )
-        );
+        return next(new Error("Missing required fields"));
       }
 
+      // Complete the password reset process
       const result = await User.completePasswordReset(
         userId,
         otpCode,
         newPassword
       );
 
-      return res
-        .status(200)
-        .json(success(result, "Password reset successfully."));
-    } catch (err) {
-      next(err);
+      // Respond with success
+      return res.status(200).json({
+        success: true,
+        message: "Password reset successfully.Login again",
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: `could not reset your password: ${error.message}`,
+      });
+      // Pass the error to the next middleware
+      next(error);
     }
   }
+
   //get user details
   static async getCurrentUser(req, res, next) {
     try {
@@ -683,29 +701,29 @@ class AuthController {
   //delete user account
   static async deleteAccount(req, res, next) {
     try {
-        const { userId } = req.user;
-        const { password } = req.body;
+      const { userId } = req.user;
+      const { password } = req.body;
 
-        const isDeleted = await User.deleteAccount(userId, password);
-        if (!isDeleted) {
-            return res.status(404).json({
-                success: false,
-                message: "Failed to delete account",
-            });
-        }
-
-        return res.status(200).json({
-            success: true,
-            message: "Account deleted successfully",
+      const isDeleted = await User.deleteAccount(userId, password);
+      if (!isDeleted) {
+        return res.status(404).json({
+          success: false,
+          message: "Failed to delete account",
         });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Account deleted successfully",
+      });
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: `could delete your account: ${error.message}`,
-        });
-        next(error);
+      res.status(500).json({
+        success: false,
+        message: `could delete your account: ${error.message}`,
+      });
+      next(error);
     }
-}
+  }
 }
 
 module.exports = AuthController;

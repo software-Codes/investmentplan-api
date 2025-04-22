@@ -969,18 +969,38 @@ class User {
    */
   static async completePasswordReset(userId, otpCode, newPassword) {
     // Verify OTP
-    const isVerified = await OTP.verify({
-      userId,
-      otpCode,
+    const OTP = require("./OTP");
+    const isValid = await OTP.verify({
+      userId: userId,
+      otpCode: otpCode,
       purpose: "reset_password",
     });
 
-    if (!isVerified) {
+    if (!isValid) {
       throw new Error("Invalid or expired OTP code");
     }
 
-    // Update password
-    await this.changePassword(userId, newPassword);
+    // Hash the new password
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(newPassword, saltRounds);
+
+    const queryText = `
+      UPDATE users 
+      SET 
+          password_hash = $1,
+          updated_at = $2
+      WHERE user_id = $3;
+  `;
+
+    const res = await query(queryText, [
+      passwordHash,
+      new Date().toISOString(),
+      userId,
+    ]);
+
+    if (res.rowCount === 0) {
+      throw new Error("User not found");
+    }
 
     return {
       success: true,
@@ -1126,6 +1146,37 @@ class User {
       // Log and rethrow the error for further handling
       throw new Error(`Failed to retrieve wallet balances: ${error.message}`);
     }
+  }
+  //resetting password
+  static async initiatePasswordReset(userId, purpose = "reset_password") {
+    //find the user
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+    //generate the new otp
+    const OTP = require("./OTP");
+    const otpData = {
+      userId: user.user_id,
+      purpose,
+      deliveryMethod:
+        user.preferred_contact_method === "email" ? "email" : "sms",
+    };
+    if (otpData.deliveryMethod === "email") {
+      otpData.email = user.email;
+    } else {
+      otpData.phoneNumber = user.phone_number;
+    }
+    await OTP.generate(otpData);
+    return {
+      userId: user.user_id,
+      method: otpData.deliveryMethod,
+      destination:
+        otpData.deliveryMethod === "email"
+          ? this._maskEmail(user.email)
+          : this._maskPhoneNumber(user.phone_number),
+      message: `Recovery code sent via ${otpData.deliveryMethod}`,
+    };
   }
 }
 
