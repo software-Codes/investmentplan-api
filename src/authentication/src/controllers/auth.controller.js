@@ -386,9 +386,8 @@ class AuthController {
         );
         return res.status(404).json({
           success: false,
-          message:
-            "Session not found or already invalidated. Please log in again if necessary.",
-        });
+          message: `session invalidated or not found ${error.message}`,
+                    });
       }
 
       // Log successful logout
