@@ -1,4 +1,273 @@
 // routes/auth.routes.js
+
+/**
+ * @openapi
+ * /api/v1/auth/register:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Register a new user
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               fullName:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               phoneNumber:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *               preferredContactMethod:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: User registered successfully
+ *       400:
+ *         description: Bad request
+ */
+
+/**
+ * @openapi
+ * /api/v1/auth/login:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Login a user
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *       401:
+ *         description: Unauthorized
+ */
+
+/**
+ * @openapi
+ * /api/v1/auth/resend-verification:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Resend verification OTP
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               userId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Verification OTP resent successfully
+ *       400:
+ *         description: Bad request
+ */
+
+/**
+ * @openapi
+ * /api/v1/auth/verify-otp:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Verify OTP
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               userId:
+ *                 type: string
+ *               otpCode:
+ *                 type: string
+ *               purpose:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: OTP verified successfully
+ *       400:
+ *         description: Invalid or expired OTP
+ */
+
+/**
+ * @openapi
+ * /api/v1/auth/logout:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Logout user
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Logout successful
+ *       404:
+ *         description: Session not found
+ */
+
+/**
+ * @openapi
+ * /api/v1/auth/logout-all:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Logout from all sessions
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Successfully logged out from all sessions
+ */
+
+/**
+ * @openapi
+ * /api/v1/auth/initiate-recovery:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Initiate password recovery
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *               method:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Recovery initiated successfully
+ *       400:
+ *         description: Bad request
+ */
+
+/**
+ * @openapi
+ * /api/v1/auth/complete-recovery:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Complete password recovery
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               userId:
+ *                 type: string
+ *               otpCode:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
+ *               ipAddress:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *       400:
+ *         description: Invalid or expired OTP
+ */
+
+/**
+ * @openapi
+ * /api/v1/auth/initiate-password-reset:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Initiate password reset
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               userId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password reset initiated
+ *       400:
+ *         description: Bad request
+ */
+
+/**
+ * @openapi
+ * /api/v1/auth/complete-password-reset:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Complete password reset
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               userId:
+ *                 type: string
+ *               otpCode:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password reset completed successfully
+ *       400:
+ *         description: Invalid or expired OTP
+ */
+
+/**
+ * @openapi
+ * /api/v1/auth/delete-account:
+ *   delete:
+ *     tags: [Auth]
+ *     summary: Delete user account
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Account deleted successfully
+ *       400:
+ *         description: Failed to delete account
+ */
+
+/**
+ * @openapi
+ * /api/v1/auth/me:
+ *   get:
+ *     tags: [Auth]
+ *     summary: Get current user details
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User details retrieved successfully
+ *       404:
+ *         description: User not found
+ */
 const express = require("express");
 const router = express.Router();
 const authController = require("../controllers/auth.controller");

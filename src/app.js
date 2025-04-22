@@ -12,6 +12,8 @@ const database = require("./authentication/src/Config/neon-database");
 const setupDatabase = require("./authentication/src/Config/setupDatabase");
 const authRoutes = require("../src/authentication/src/routes/auth.routes"); // Import auth routes
 const adminRoutes = require("./authentication/src/routes/admin/admin.routes");
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec =  require("./swagger.config")
 // const { validateRegistration, validateLogin } = require("../src/authentication/src/middleware/validation.middleware"); // Import validation middleware
 // const { loginLimiter, apiLimiter, otpLimiter } = require("../src/authentication/src/middleware/rate-limiter"); // Import rate limiting middleware
 
@@ -150,7 +152,10 @@ const createApp = () => {
     // Register authentication routes with middleware
     app.use("/api/v1/auth", authRoutes);
   }
+  // apis for the admin
   app.use("/api/v1/admin", adminRoutes);
+  //documentation apis
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
   /**
    * Handle 404 errors

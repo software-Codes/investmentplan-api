@@ -2,7 +2,117 @@
  * @file admin.routes.js
  * @description Defines routes for admin-related operations, including login, user management, and retrieving user details.
  */
+/**
+ * @openapi
+ * /api/v1/admin/login:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Admin login
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *       401:
+ *         description: Unauthorized
+ */
 
+/**
+ * @openapi
+ * /api/v1/admin/logout-user:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Logout a user
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               userId:
+ *                 type: string
+ *               sessionId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: User logged out successfully
+ *       404:
+ *         description: Session not found
+ */
+
+/**
+ * @openapi
+ * /api/v1/admin/delete-user:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Delete a user
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               userId:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: User deleted successfully
+ *       400:
+ *         description: Failed to delete user
+ */
+
+/**
+ * @openapi
+ * /api/v1/admin/user-details/{userId}:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Get user details
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User details retrieved successfully
+ *       404:
+ *         description: User not found
+ */
+
+/**
+ * @openapi
+ * /api/v1/admin/all-users:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Get all users
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Users retrieved successfully
+ *       400:
+ *         description: Failed to retrieve users
+ */
 const express = require("express");
 const router = express.Router();
 const adminController = require("../../controllers/admin/admin.controller");
