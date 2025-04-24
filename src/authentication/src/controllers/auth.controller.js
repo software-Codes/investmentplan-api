@@ -5,6 +5,7 @@ const { logger } = require("../utils/logger");
 const { validate } = require("express-validation");
 const { error } = require("../utils/response.util");
 const { addTokenToBlacklist } = require("../helpers/blacklist-auth");
+const KYC =  require("../models/kyc-Verification/kyc.model")
 /**
  * @file auth.service.js
  * @description Authentication service that integrates User and OTP models for a complete auth flow

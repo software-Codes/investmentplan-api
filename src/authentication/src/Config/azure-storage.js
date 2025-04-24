@@ -1,1 +1,0 @@
-// azure storage for blob storage to be used for keeping the user documnets like id and drivin license
