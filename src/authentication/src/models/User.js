@@ -7,6 +7,9 @@
 const { pool, query } = require("../Config/neon-database");
 const { v4: uuidv4 } = require("uuid");
 const bcrypt = require("bcrypt");
+const SmileIDService = require("../services/smile-id-kyc/smile-id.service");
+const AzureBlobStorageService = require("../services/azure-blob-storage-kyc/azure-blob-storage.service");
+const smileIDService = require("../services/smile-id-kyc/smile-id.service");
 /**
  * User model - Handles all user-related database operations
  */
@@ -498,50 +501,72 @@ class User {
    * @returns {Promise<void>} Resolves when the document is successfully submitted or updated.
    * @throws {Error} Throws an error if the database operation fails.
    */
-  static async submitDocuments(userId, documentData) {
-    // Generate a unique ID for the document
-    const documentId = uuidv4();
-
-    // Get the current timestamp
-    const currentDate = new Date().toISOString();
-
-    // SQL query to insert or update the KYC document
-    const queryText = `
-    INSERT INTO kyc_documents (
-      document_id,
-      user_id,
-      document_type,
-      document_number,
-      document_country,
-      blob_storage_path,
-      verification_status,
-      uploaded_at,
-      created_at,
-      updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-    ON CONFLICT (user_id) DO UPDATE
-    SET 
-      document_type = EXCLUDED.document_type,
-      document_number = EXCLUDED.document_number,
-      document_country = EXCLUDED.document_country,
-      blob_storage_path = EXCLUDED.blob_storage_path,
-      verification_status = EXCLUDED.verification_status,
-      updated_at = EXCLUDED.updated_at;
-  `;
-
-    // Execute the query with the provided data
-    await query(queryText, [
-      documentId, // Unique ID for the document
-      userId, // User ID associated with the document
-      documentData.documentType, // Type of the document
-      documentData.documentNumber, // Document number
-      documentData.documentCountry, // Country of issuance
-      documentData.blobStoragePath, // Path to the document in blob storage
-      "pending", // Default verification status
-      currentDate, // Timestamp for when the document was uploaded
-      currentDate, // Timestamp for when the record was created
-      currentDate, // Timestamp for when the record was last updated
-    ]);
+  static async submitDocuments(userId, documentData, fileBuffer, fileName) {
+    try {
+      // Initialize Smile ID and Azure Blob Storage services
+      const smileID = new smileIDService(
+        process.env.SMILE_ID_API_KEY || "ad0d6305-ed20-46b6-a73e-9e837238365c",
+        process.env.SMILE_ID_APP_ID || "7555"
+      );
+      const blobStorage = new AzureBlobStorageService(
+        process.env.AZURE_STORAGE_ACCOUNT_NAME || "",
+        "kyc-documents"
+      );
+      // Upload document to Azure Blob Storage
+      const blobStoragePath = await blobStorage.uploadDocument(
+        userId,
+        documentData.documentType,
+        fileBuffer,
+        fileName
+      );
+      // Submit document to Smile ID for verification
+      const verificationData = {
+        user_id: userId,
+        country: documentData.documentCountry,
+        id_type: documentData.documentType,
+        id_number: documentData.documentNumber,
+        // Add other necessary fields for Smile ID verification
+      };
+      const verificationResponse = await smileID.initiateVerification(
+        verificationData
+      );
+      // Store document details and verification status in the database
+      const documentId = uuidv4();
+      const currentDate = new Date().toISOString();
+      const queryText = `
+      INSERT INTO kyc_documents (
+        document_id,
+        user_id,
+        document_type,
+        document_number,
+        document_country,
+        blob_storage_path,
+        verification_status,
+        verification_reference,
+        uploaded_at,
+        created_at,
+        updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING *;
+    `;
+    const values = [
+      documentId,
+      userId,
+      documentData.documentType,
+      documentData.documentNumber,
+      documentData.documentCountry,
+      blobStoragePath,
+      'pending',
+      verificationResponse.verification_id,
+      currentDate,
+      currentDate,
+      currentDate,
+    ];
+    const res = await query(queryText, values);
+    return res.rows[0];
+    } catch (error) {
+      throw new Error (`Failed to submit documents ${error.message}`)
+    }
   }
   /**
    * Initiates the account recovery process for a user

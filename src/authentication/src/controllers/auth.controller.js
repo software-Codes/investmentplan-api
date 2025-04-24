@@ -5,7 +5,8 @@ const { logger } = require("../utils/logger");
 const { validate } = require("express-validation");
 const { error } = require("../utils/response.util");
 const { addTokenToBlacklist } = require("../helpers/blacklist-auth");
-const KYC =  require("../models/kyc-Verification/kyc.model")
+const smileIDService = require("../services/smile-id-kyc/smile-id.service");
+const AzureBlobStorageService = require("../services/azure-blob-storage-kyc/azure-blob-storage.service");
 /**
  * @file auth.service.js
  * @description Authentication service that integrates User and OTP models for a complete auth flow
@@ -721,6 +722,33 @@ class AuthController {
       res.status(500).json({
         success: false,
         message: `could delete your account: ${error.message}`,
+      });
+      next(error);
+    }
+  }
+  static async uploadDocuments(req, res, next) {
+    try {
+      const { userId } = req.user;
+      const documentData = req.body;
+      const fileBuffer = req.file.buffer; //ensure that multer is configured to handle file uploads
+
+      const fileName = req.file.originalname;
+      // Submit documents to Smile ID and Azure Blob Storage
+      const document = await user.submitDocuments(
+        userId,
+        documentData,
+        fileBuffer,
+        fileName
+      );
+      return res.status(200).json({
+        success: true,
+        message: 'Documents submitted successfully',
+        document,
+      })
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: `could not submit documents: ${error.message}`,
       });
       next(error);
     }

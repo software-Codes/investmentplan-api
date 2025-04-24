@@ -282,6 +282,8 @@ const {
   apiLimiter,
 } = require("../middleware/rate-limiter");
 const { authenticate } = require("../middleware/auth.middleware");
+const multer = require("multer");
+const upload = multer({storage: multer.memoryStorage() })
 
 // Apply general rate limiting to all routes
 router.use(apiLimiter);
@@ -340,5 +342,12 @@ router.delete("/delete-account", authenticate, (req, res, next) => {
 router.get("/me", authenticate, (req, res, next) => {
   authController.getCurrentUser(req, res, next);
 });
+//submit kyc documents
+router.post(
+  '/upload-documents',
+  authenticate,
+  upload.single('document'),
+  authController.uploadDocuments
+);
 
 module.exports = router;
