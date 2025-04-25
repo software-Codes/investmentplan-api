@@ -3,7 +3,7 @@
  * @description Controller for admin-related operations, including managing users, retrieving user details, and performing administrative actions.
  */
 
-const User = require("../../models/User");
+const User = require("../../models/user.model");
 const Admin = require("../../models/admin/Admin");
 const jwt = require("jsonwebtoken");
 

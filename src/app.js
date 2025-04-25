@@ -12,6 +12,7 @@ const database = require("./authentication/src/Config/neon-database");
 const setupDatabase = require("./authentication/src/Config/setupDatabase");
 const authRoutes = require("../src/authentication/src/routes/auth.routes"); // Import auth routes
 const adminRoutes = require("./authentication/src/routes/admin/admin.routes");
+const kycRoutes = require("./authentication/src/routes/kyc/kyc.routes")
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec =  require("./swagger.config")
 // const { validateRegistration, validateLogin } = require("../src/authentication/src/middleware/validation.middleware"); // Import validation middleware
@@ -154,6 +155,8 @@ const createApp = () => {
   }
   // apis for the admin
   app.use("/api/v1/admin", adminRoutes);
+  //apis for document kyc verification
+  app.use("api/v1/kyc", kycRoutes)
   //documentation apis
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 

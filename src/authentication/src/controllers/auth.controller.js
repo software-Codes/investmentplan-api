@@ -1,5 +1,5 @@
-const User = require("../models/User");
-const OTP = require("../models/OTP");
+const User = require("../models/user.model");
+const OTP = require("../models/otp.model");
 const jwt = require("jsonwebtoken");
 const { logger } = require("../utils/logger");
 const { validate } = require("express-validation");
@@ -88,6 +88,11 @@ class AuthController {
         message: `Verification code sent via ${deliveryMethod} verify your account to be able to login and access the investment platform`,
       });
     } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: `Error occurred during registration: ${error.message}`,
+      });
+
       next(error);
     }
   }
@@ -726,31 +731,258 @@ class AuthController {
       next(error);
     }
   }
-  static async uploadDocuments(req, res, next) {
-    try {
-      const { userId } = req.user;
-      const documentData = req.body;
-      const fileBuffer = req.file.buffer; //ensure that multer is configured to handle file uploads
+  // static async uploadDocuments(req, res, next) {
+  //   try {
+  //     const { userId } = req.user;
+  //     const documentData = req.body;
+  //     const fileBuffer = req.file.buffer; //ensure that multer is configured to handle file uploads
 
-      const fileName = req.file.originalname;
-      // Submit documents to Smile ID and Azure Blob Storage
-      const document = await user.submitDocuments(
+  //     const fileName = req.file.originalname;
+  //     // Submit documents to Smile ID and Azure Blob Storage
+  //     const document = await user.submitDocuments(
+  //       userId,
+  //       documentData,
+  //       fileBuffer,
+  //       fileName
+  //     );
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: 'Documents submitted successfully',
+  //       document,
+  //     })
+  //   } catch (error) {
+  //     res.status(500).json({
+  //       success: false,
+  //       message: `could not submit documents: ${error.message}`,
+  //     });
+  //     next(error);
+  //   }
+  // }
+
+  /**
+   * Handles document upload and verification initialization
+   *
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware function
+   */
+  static async uploadDocument(req, res, next) {
+    try {
+      //check if the user is authenticated
+      if (!req.user || req.user.userId) {
+        // Check if user is authenticated
+        if (!req.user || !req.user.userId) {
+          return res.status(401).json({
+            success: false,
+            message: "User authentication required",
+          });
+        }
+        // Check if file is provided
+        if (!req.file) {
+          return res.status(400).json({
+            success: false,
+            message: "Document file is required",
+          });
+        }
+        // Validate required fields
+        const requiredFields = [
+          "documentType",
+          "documentNumber",
+          "documentCountry",
+        ];
+        const missingFields = requiredFields.filter(
+          (field) => !req.body[field]
+        );
+        if (missingFields.length > 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Missing required fields: ${missingFields.join(", ")}`,
+          });
+        }
+        const { userId } = req.user;
+        const documentData = {
+          documentType: req.body.documentType,
+          documentNumber: req.body.documentNumber,
+          documentCountry: req.body.documentCountry,
+        };
+        const fileBuffer = req.file.buffer;
+        const fileName = req.file.originalname;
+        const contentType = req.file.mimetype;
+      }
+      // Submit document for verification
+      const document = await User.submitKycDocument(
         userId,
         documentData,
         fileBuffer,
-        fileName
+        fileName,
+        contentType
+      );
+      logger.info(`Document uploaded successfully for user ${userId}`);
+      return res.status(200).json({
+        success: true,
+        message: "Document submitted successfully for verification",
+        document: {
+          documentId: document.document_id,
+          documentType: document.document_type,
+          verificationStatus: document.verification_status,
+          uploadedAt: document.uploaded_at,
+        },
+      });
+    } catch (error) {
+      logger.error(`Document upload failed: ${error.message}`, { error });
+
+      return res.status(500).json({
+        success: false,
+        message: `Could not process document upload: ${error.message}`,
+      });
+    }
+  }
+  /**
+   * Gets the verification status of a document
+   *
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  static async getDocumentStatus(req, res) {
+    try {
+      const { userId } = req.user;
+      const { documentId } = req.params;
+
+      if (!documentId) {
+        return res.status(400).json({
+          success: false,
+          message: "Document ID is required",
+        });
+      }
+      const document = await User.checkDocumentVerificationStatus(
+        userId,
+        documentId
       );
       return res.status(200).json({
         success: true,
-        message: 'Documents submitted successfully',
-        document,
-      })
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        message: `could not submit documents: ${error.message}`,
+        message: "Document status retrieved successfully",
+        document: {
+          documentId: document.document_id,
+          documentType: document.document_type,
+          verificationStatus: document.verification_status,
+          uploadedAt: document.uploaded_at,
+          verifiedAt: document.verified_at,
+          verificationNotes: document.verification_notes,
+        },
       });
-      next(error);
+    } catch (error) {
+      logger.error(`Failed to get document status: ${error.message}`, {
+        error,
+      });
+
+      return res.status(500).json({
+        success: false,
+        message: `Could not retrieve document status: ${error.message}`,
+      });
+    }
+  }
+  /**
+   * Gets all documents for a user
+   *
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  static async getUserDocuments(req, res) {
+    try {
+      const { userId } = req.user;
+      const documents = await User.getUserDocuments(userId);
+      return res.status(200).json({
+        success: true,
+        message: "User documents retrieved successfully",
+        documents: documents.map((doc) => ({
+          documentId: doc.document_id,
+          documentType: doc.document_type,
+          documentNumber: doc.document_number,
+          documentCountry: doc.document_country,
+          verificationStatus: doc.verification_status,
+          uploadedAt: doc.uploaded_at,
+          verifiedAt: doc.verified_at,
+        })),
+      });
+    } catch (error) {
+      logger.error(`Failed to get user documents: ${error.message}`, { error });
+
+      return res.status(500).json({
+        success: false,
+        message: `Could not retrieve user documents: ${error.message}`,
+      });
+    }
+  }
+
+  /**
+   * Handle verification callback from Smile ID
+   *
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  static async handleVerificationCallback(req, res) {
+    try {
+      const callbackData = req.body;
+      logger.info("Received verification callback from Smile ID", {
+        jobId: callbackData.job_id,
+        userId: callbackData.user_id,
+      });
+      // Validate signature if provided
+      // This should match your Smile ID implementation
+
+      // Find the document with this verification reference
+      const result = await query(
+        `SELECT * FROM kyc_documents WHERE verification_reference = $1 LIMIT 1`,
+        [callbackData.job_id]
+      );
+
+      if (result.rows.length === 0) {
+        logger.warn(
+          `No document found with verification reference: ${callbackData.job_id}`
+        );
+        return res.status(404).json({ message: "Document not found" });
+      }
+      const document = result.rows[0];
+      // Map Smile ID status to our status
+      let newStatus = "pending";
+      let verificationNotes = null;
+      if (callbackData.ResultCode === "1012") {
+        newStatus = "verified";
+      } else if (["1013", "1014", "1015"].includes(callbackData.ResultCode)) {
+        newStatus = "rejected";
+        verificationNotes = callbackData.ResultText || "Verification failed";
+      }
+      // Update document status in database
+      const updateQuery = `
+    UPDATE kyc_documents SET
+      verification_status = $1,
+      verification_notes = $2,
+      verified_at = $3,
+      updated_at = $4
+    WHERE document_id = $5
+  `;
+      const currentDate = new Date().toISOString();
+      const verifiedAt = newStatus === "verified" ? currentDate : null;
+
+      await query(updateQuery, [
+        newStatus,
+        verificationNotes,
+        verifiedAt,
+        currentDate,
+        document.document_id,
+      ]);
+      logger.info(
+        `Updated document ${document.document_id} status to ${newStatus} via callback`
+      );
+      // Return success response
+      return res
+        .status(200)
+        .json({ message: "Callback processed successfully" });
+    } catch (error) {
+      logger.error(`Error processing verification callback: ${error.message}`, {
+        error,
+      });
+      return res.status(500).json({ message: "Error processing callback" });
     }
   }
 }

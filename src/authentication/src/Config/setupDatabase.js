@@ -3,45 +3,60 @@ const { logger } = require("../utils/logger");
 
 async function createEnumTypes() {
   try {
-    logger.info('Creating custom ENUM types...');
+    logger.info("Creating custom ENUM types...");
     const enums = [
       {
-        name: 'contact_method_enum',
-        values: "('email', 'phone')"
+        name: "contact_method_enum",
+        values: "('email', 'phone')",
       },
       {
-        name: 'account_status_enum',
-        values: "('pending', 'active', 'suspended', 'deactivated')"
+        name: "account_status_enum",
+        values: "('pending', 'active', 'suspended', 'deactivated')",
       },
       {
-        name: 'verification_status_enum',
-        values: "('not_submitted', 'pending', 'verified', 'rejected')"
+        name: "verification_status_enum",
+        values: "('not_submitted', 'pending', 'verified', 'rejected')",
       },
       {
-        name: 'document_type_enum',
-        values: "('national_id', 'drivers_license', 'passport')"
+        name: "document_type_enum",
+        values: "('national_id', 'drivers_license', 'passport')",
       },
       {
-        name: 'otp_purpose_enum',
-        values: "('registration', 'login', 'reset_password', 'withdrawal', 'profile_update')"
+        name: "otp_purpose_enum",
+        values:
+          "('registration', 'login', 'reset_password', 'withdrawal', 'profile_update')",
       },
       {
-        name: 'otp_delivery_enum',
-        values: "('email', 'sms')"
-      }
+        name: "otp_delivery_enum",
+        values: "('email', 'sms')",
+      },
     ];
 
+    // Create all enum types first
     for (const enumType of enums) {
       await query(`
-        DO $$ BEGIN
+        DO $$ 
+        BEGIN
           CREATE TYPE ${enumType.name} AS ENUM ${enumType.values};
         EXCEPTION
-          WHEN duplicate_object THEN null;
+          WHEN duplicate_object THEN NULL;
         END $$;
       `);
     }
 
-    logger.info('All custom ENUM types created successfully');
+    // Add new values to verification_status_enum after initial creation
+    await query(`
+      DO $$ 
+      BEGIN
+        ALTER TYPE verification_status_enum ADD VALUE 'processing' AFTER 'pending';
+        ALTER TYPE verification_status_enum ADD VALUE 'expired' AFTER 'rejected';
+        ALTER TYPE verification_status_enum ADD VALUE 'cancelled' AFTER 'expired';
+      EXCEPTION
+        WHEN duplicate_object THEN NULL;
+      END $$;
+    `);
+
+    logger.info("All custom ENUM types created successfully");
   } catch (error) {
     logger.error(`Error creating ENUM types: ${error.message}`, { error });
     throw error;
@@ -50,7 +65,7 @@ async function createEnumTypes() {
 
 async function createTables() {
   try {
-    logger.info('Creating database tables...');
+    logger.info("Creating database tables...");
 
     await query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -72,24 +87,29 @@ async function createTables() {
     `);
 
     await query(`
-      CREATE TABLE IF NOT EXISTS kyc_documents (
-          document_id UUID PRIMARY KEY,
-          user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-          document_type document_type_enum NOT NULL,
-          document_number VARCHAR(100),
-          document_country VARCHAR(100),
-          blob_storage_path VARCHAR(255) NOT NULL,
-          blob_storage_url VARCHAR(255),
-          verification_status verification_status_enum NOT NULL DEFAULT 'pending',
-          verification_method VARCHAR(50),
-          verification_reference VARCHAR(100),
-          verification_notes TEXT,
-          uploaded_at TIMESTAMP WITH TIME ZONE NOT NULL,
-          verified_at TIMESTAMP WITH TIME ZONE,
-          expires_at TIMESTAMP WITH TIME ZONE,
-          created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-          updated_at TIMESTAMP WITH TIME ZONE NOT NULL
-      );
+ CREATE TABLE IF NOT EXISTS kyc_documents (
+    document_id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    document_type document_type_enum NOT NULL,
+    document_number VARCHAR(100),
+    document_country VARCHAR(100),
+    blob_storage_path VARCHAR(255) NOT NULL,
+    blob_storage_url VARCHAR(255),
+    file_name VARCHAR(255),
+    original_file_name VARCHAR(255),
+    file_size INTEGER,
+    file_type VARCHAR(100),
+    verification_status verification_status_enum NOT NULL DEFAULT 'pending',
+    verification_method VARCHAR(50),
+    verification_reference VARCHAR(100),
+    verification_notes TEXT,
+    verification_confidence DECIMAL(5,2),
+    uploaded_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    verified_at TIMESTAMP WITH TIME ZONE,
+    expires_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
     `);
 
     await query(`
@@ -121,7 +141,7 @@ async function createTables() {
       );
     `);
 
-    logger.info('All tables created successfully');
+    logger.info("All tables created successfully");
   } catch (error) {
     logger.error(`Error creating tables: ${error.message}`, { error });
     throw error;
@@ -130,18 +150,36 @@ async function createTables() {
 
 async function createIndexes() {
   try {
-    logger.info('Creating indexes...');
+    logger.info("Creating indexes...");
 
     await query(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone_number);`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_users_status ON users(account_status);`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_otp_user_id ON otp_records(user_id);`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_otp_email ON otp_records(email);`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_otp_phone_number ON otp_records(phone_number);`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_otp_purpose ON otp_records(otp_purpose);`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON user_sessions(user_id);`);
+    await query(
+      `CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone_number);`
+    );
+    await query(
+      `CREATE INDEX IF NOT EXISTS idx_users_status ON users(account_status);`
+    );
+    await query(
+      `CREATE INDEX IF NOT EXISTS idx_otp_user_id ON otp_records(user_id);`
+    );
+    await query(
+      `CREATE INDEX IF NOT EXISTS idx_otp_email ON otp_records(email);`
+    );
+    await query(
+      `CREATE INDEX IF NOT EXISTS idx_otp_phone_number ON otp_records(phone_number);`
+    );
+    await query(
+      `CREATE INDEX IF NOT EXISTS idx_otp_purpose ON otp_records(otp_purpose);`
+    );
+    await query(
+      `CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON user_sessions(user_id);`
+    );
 
-    logger.info('All indexes created successfully');
+    await query(
+      `CREATE INDEX IF NOT EXISTS idx_kyc_verification_reference ON kyc_documents(verification_reference);`
+    );
+
+    logger.info("All indexes created successfully");
   } catch (error) {
     logger.error(`Error creating indexes: ${error.message}`, { error });
     throw error;
@@ -150,12 +188,12 @@ async function createIndexes() {
 
 async function setupDatabase() {
   try {
-    logger.info('Starting database setup...');
+    logger.info("Starting database setup...");
     await checkDatabaseConnection();
     await createEnumTypes();
     await createTables();
     await createIndexes();
-    logger.success('Database setup completed successfully!');
+    logger.success("Database setup completed successfully!");
   } catch (error) {
     logger.error(`Database setup failed: ${error.message}`, { error });
     throw error;
