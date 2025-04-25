@@ -1,8 +1,3 @@
-/**
- * @file smile-id.service.js
- * @description Service for interacting with the Smile Identity API for KYC verification.
- */
-
 const SmileIdentityCore = require("smile-identity-core");
 const { logger } = require("../../utils/logger");
 
@@ -24,7 +19,7 @@ class SmileIDService {
     }
     this.config = {
       apiKey,
-      partnerId: parseInt(partnerId, 10),
+      partnerId,
       callbackUrl,
       environment,
     };
@@ -36,6 +31,7 @@ class SmileIDService {
     );
     logger.info("Smile Id service initialized");
   }
+
   /**
    * Performs document verification using Smile Identity's Document Verification API
    *
@@ -51,57 +47,54 @@ class SmileIDService {
     try {
       logger.info(`Starting document verification for user: ${data.userId}`);
       const jobType = 5; // Document Verification job type
-  
-      // Check that documentNumber is present and not empty
+
       if (!data.documentNumber || data.documentNumber.trim() === '') {
         throw new Error("Document number (id_number) is required for verification");
       }
-  
-      // Prepare job parameters
+
       const jobParams = {
         user_id: data.userId,
         job_id: `doc_verify_${Date.now()}`,
         job_type: jobType,
       };
-      
-      // Prepare ID info - ensure the id_number field is explicitly set
+
       const idInfo = {
         country: data.countryCode,
         id_type: data.documentType,
-        id_number: data.documentNumber, // This must not be null or empty
+        id_number: data.documentNumber,
       };
-      
-      // Log the idInfo to verify it has all required fields
+
       logger.info(`ID info for verification: ${JSON.stringify(idInfo)}`);
-      
-      // Prepare image(s)
-      let images = {};
+
+      // Ensure documentImage is properly handled
+      let imageDetails = [];
+      let imageContent;
+
       if (Buffer.isBuffer(data.documentImage)) {
-        // Convert buffer to base64
-        images.id_card = data.documentImage.toString("base64");
+        imageContent = data.documentImage.toString("base64");
       } else if (typeof data.documentImage === "string") {
-        // Assume it's already base64
-        images.id_card = data.documentImage;
+        imageContent = data.documentImage;
       } else {
-        throw new Error(
-          "Document image must be provided as Buffer or base64 string"
-        );
+        throw new Error("Document image must be provided as Buffer or base64 string");
       }
-      
-      // Prepare optional callback
+
+      imageDetails.push({
+        image_type_id: 3, // Base64 encoded front of ID
+        image: imageContent,
+      });
+
       const options = {};
       if (this.config.callbackUrl) {
         options.callback_url = this.config.callbackUrl;
       }
-      
-      // Submit verification request
+
       const response = await this.WebApi.submit_job(
         jobParams,
+        imageDetails,
         idInfo,
-        images,
         options
       );
-      
+
       logger.info(`Document verification initiated for user ${data.userId}`);
       return response;
     } catch (error) {
@@ -109,6 +102,7 @@ class SmileIDService {
       throw new Error(`Document verification failed: ${error.message}`);
     }
   }
+
   /**
    * Retrieves the status of a verification job
    *
@@ -122,7 +116,6 @@ class SmileIDService {
         `Getting verification status for user ${userId}, job ${jobId}`
       );
 
-      // Fixed: Use the correct SDK method name
       const response = await this.WebApi.get_job_status({
         user_id: userId,
         job_id: jobId,

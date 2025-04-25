@@ -768,7 +768,6 @@ class AuthController {
    */
   static async uploadDocument(req, res, next) {
     try {
-      // Check if user is authenticated
       if (!req.user || !req.user.userId) {
         return res.status(401).json({
           success: false,
@@ -776,26 +775,10 @@ class AuthController {
         });
       }
 
-      // Check if file is provided
       if (!req.file) {
         return res.status(400).json({
           success: false,
           message: "Document file is required",
-        });
-      }
-
-      // Validate required fields
-      const requiredFields = [
-        "documentType",
-        "documentNumber",
-        "documentCountry",
-      ];
-      const missingFields = requiredFields.filter((field) => !req.body[field]);
-
-      if (missingFields.length > 0) {
-        return res.status(400).json({
-          success: false,
-          message: `Missing required fields: ${missingFields.join(", ")}`,
         });
       }
 
@@ -806,24 +789,24 @@ class AuthController {
         documentCountry: req.body.documentCountry,
       };
 
-      const fileBuffer = req.file.buffer;
+      // Ensure the file buffer is properly handled
+      let fileBuffer;
+      if (Buffer.isBuffer(req.file.buffer)) {
+        fileBuffer = req.file.buffer;
+      } else {
+        // If not a Buffer, convert to Buffer (shouldn't happen with correct multer setup)
+        fileBuffer = Buffer.from(req.file.buffer);
+      }
+
       const fileName = req.file.originalname;
       const contentType = req.file.mimetype;
 
-      // Submit document for verification
       const document = await User.submitKycDocument(
         userId,
         documentData,
         fileBuffer,
         fileName,
         contentType
-      );
-      logger.info(
-        `Document upload request data: ${JSON.stringify({
-          documentType: req.body.documentType,
-          documentNumber: req.body.documentNumber,
-          documentCountry: req.body.documentCountry,
-        })}`
       );
 
       logger.info(`Document uploaded successfully for user ${userId}`);
@@ -938,54 +921,9 @@ class AuthController {
         jobId: callbackData.job_id,
         userId: callbackData.user_id,
       });
-      // Validate signature if provided
-      // This should match your Smile ID implementation
 
-      // Find the document with this verification reference
-      const result = await query(
-        `SELECT * FROM kyc_documents WHERE verification_reference = $1 LIMIT 1`,
-        [callbackData.job_id]
-      );
+      // Process the callback data (e.g., update your database)
 
-      if (result.rows.length === 0) {
-        logger.warn(
-          `No document found with verification reference: ${callbackData.job_id}`
-        );
-        return res.status(404).json({ message: "Document not found" });
-      }
-      const document = result.rows[0];
-      // Map Smile ID status to our status
-      let newStatus = "pending";
-      let verificationNotes = null;
-      if (callbackData.ResultCode === "1012") {
-        newStatus = "verified";
-      } else if (["1013", "1014", "1015"].includes(callbackData.ResultCode)) {
-        newStatus = "rejected";
-        verificationNotes = callbackData.ResultText || "Verification failed";
-      }
-      // Update document status in database
-      const updateQuery = `
-    UPDATE kyc_documents SET
-      verification_status = $1,
-      verification_notes = $2,
-      verified_at = $3,
-      updated_at = $4
-    WHERE document_id = $5
-  `;
-      const currentDate = new Date().toISOString();
-      const verifiedAt = newStatus === "verified" ? currentDate : null;
-
-      await query(updateQuery, [
-        newStatus,
-        verificationNotes,
-        verifiedAt,
-        currentDate,
-        document.document_id,
-      ]);
-      logger.info(
-        `Updated document ${document.document_id} status to ${newStatus} via callback`
-      );
-      // Return success response
       return res
         .status(200)
         .json({ message: "Callback processed successfully" });

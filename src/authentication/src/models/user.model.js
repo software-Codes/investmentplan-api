@@ -563,13 +563,13 @@ class User {
         throw new Error("Document number is required for verification");
       }
 
-      // When calling smileIDService.verifyDocument, ensure documentNumber is passed
+      // Prepare verification data with proper handling of documentImage
       const verificationData = {
         userId,
         countryCode: documentData.documentCountry,
         documentType: smileDocumentType,
-        documentNumber: documentData.documentNumber, // Make sure this is being set correctly
-        documentImage: fileBuffer,
+        documentNumber: documentData.documentNumber,
+        documentImage: fileBuffer, // Ensure this is a Buffer
       };
       logger.info(
         `Verification data: ${JSON.stringify({
