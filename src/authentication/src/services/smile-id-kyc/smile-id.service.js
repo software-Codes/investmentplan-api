@@ -51,21 +51,29 @@ class SmileIDService {
     try {
       logger.info(`Starting document verification for user: ${data.userId}`);
       const jobType = 5; // Document Verification job type
-
+  
+      // Check that documentNumber is present and not empty
+      if (!data.documentNumber || data.documentNumber.trim() === '') {
+        throw new Error("Document number (id_number) is required for verification");
+      }
+  
       // Prepare job parameters
       const jobParams = {
         user_id: data.userId,
         job_id: `doc_verify_${Date.now()}`,
         job_type: jobType,
       };
-
-      // Prepare ID info
+      
+      // Prepare ID info - ensure the id_number field is explicitly set
       const idInfo = {
         country: data.countryCode,
         id_type: data.documentType,
-        id_number: data.documentNumber,
+        id_number: data.documentNumber, // This must not be null or empty
       };
-
+      
+      // Log the idInfo to verify it has all required fields
+      logger.info(`ID info for verification: ${JSON.stringify(idInfo)}`);
+      
       // Prepare image(s)
       let images = {};
       if (Buffer.isBuffer(data.documentImage)) {
@@ -79,22 +87,21 @@ class SmileIDService {
           "Document image must be provided as Buffer or base64 string"
         );
       }
-
+      
       // Prepare optional callback
       const options = {};
       if (this.config.callbackUrl) {
         options.callback_url = this.config.callbackUrl;
       }
-
-      // Fixed: Use the correct SDK method
-      // Check the latest Smile ID SDK documentation for the correct method name
+      
+      // Submit verification request
       const response = await this.WebApi.submit_job(
         jobParams,
         idInfo,
         images,
         options
       );
-
+      
       logger.info(`Document verification initiated for user ${data.userId}`);
       return response;
     } catch (error) {

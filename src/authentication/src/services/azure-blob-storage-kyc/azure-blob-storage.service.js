@@ -71,13 +71,12 @@ class AzureBlobStorageService {
       );
       // Create container if it doesn't exist
       try {
-        await containerClient.createIfNotExists({
-          access: "blob", // Or "container" depending on your needs
-        });
-      } catch (containerError) {
-        logger.warn(
-          `Container creation attempted but may already exist: ${containerError.message}`
+        await containerClient.createIfNotExists();
+        logger.info(
+          `Container ${this.containerName} checked/created successfully`
         );
+      } catch (containerError) {
+        logger.warn(`Container creation attempted: ${containerError.message}`);
       }
       // Generate a unique file name to prevent overwrites
       const timestamp = new Date().getTime();

@@ -555,14 +555,30 @@ class User {
       const smileDocumentType = this._mapToSmileIDDocumentType(
         documentData.documentType
       );
+      // Verify that documentData.documentNumber is properly set
+      if (
+        !documentData.documentNumber ||
+        documentData.documentNumber.trim() === ""
+      ) {
+        throw new Error("Document number is required for verification");
+      }
 
+      // When calling smileIDService.verifyDocument, ensure documentNumber is passed
       const verificationData = {
         userId,
         countryCode: documentData.documentCountry,
         documentType: smileDocumentType,
-        documentNumber: documentData.documentNumber,
+        documentNumber: documentData.documentNumber, // Make sure this is being set correctly
         documentImage: fileBuffer,
       };
+      logger.info(
+        `Verification data: ${JSON.stringify({
+          userId: verificationData.userId,
+          countryCode: verificationData.countryCode,
+          documentType: verificationData.documentType,
+          documentNumber: verificationData.documentNumber, // Log to verify it's present
+        })}`
+      );
 
       const verificationResponse = await smileIDService.verifyDocument(
         verificationData

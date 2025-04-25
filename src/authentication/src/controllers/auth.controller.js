@@ -772,7 +772,7 @@ class AuthController {
       if (!req.user || !req.user.userId) {
         return res.status(401).json({
           success: false,
-          message: 'User authentication required'
+          message: "User authentication required",
         });
       }
 
@@ -780,18 +780,22 @@ class AuthController {
       if (!req.file) {
         return res.status(400).json({
           success: false,
-          message: 'Document file is required'
+          message: "Document file is required",
         });
       }
 
       // Validate required fields
-      const requiredFields = ['documentType', 'documentNumber', 'documentCountry'];
-      const missingFields = requiredFields.filter(field => !req.body[field]);
-      
+      const requiredFields = [
+        "documentType",
+        "documentNumber",
+        "documentCountry",
+      ];
+      const missingFields = requiredFields.filter((field) => !req.body[field]);
+
       if (missingFields.length > 0) {
         return res.status(400).json({
           success: false,
-          message: `Missing required fields: ${missingFields.join(', ')}`
+          message: `Missing required fields: ${missingFields.join(", ")}`,
         });
       }
 
@@ -799,9 +803,9 @@ class AuthController {
       const documentData = {
         documentType: req.body.documentType,
         documentNumber: req.body.documentNumber,
-        documentCountry: req.body.documentCountry
+        documentCountry: req.body.documentCountry,
       };
-      
+
       const fileBuffer = req.file.buffer;
       const fileName = req.file.originalname;
       const contentType = req.file.mimetype;
@@ -814,25 +818,32 @@ class AuthController {
         fileName,
         contentType
       );
+      logger.info(
+        `Document upload request data: ${JSON.stringify({
+          documentType: req.body.documentType,
+          documentNumber: req.body.documentNumber,
+          documentCountry: req.body.documentCountry,
+        })}`
+      );
 
       logger.info(`Document uploaded successfully for user ${userId}`);
-      
+
       return res.status(200).json({
         success: true,
-        message: 'Document submitted successfully for verification',
+        message: "Document submitted successfully for verification",
         document: {
           documentId: document.document_id,
           documentType: document.document_type,
           verificationStatus: document.verification_status,
-          uploadedAt: document.uploaded_at
-        }
+          uploadedAt: document.uploaded_at,
+        },
       });
     } catch (error) {
       logger.error(`Document upload failed: ${error.message}`, { error });
-      
+
       return res.status(500).json({
         success: false,
-        message: `Could not process document upload: ${error.message}`
+        message: `Could not process document upload: ${error.message}`,
       });
     }
   }
