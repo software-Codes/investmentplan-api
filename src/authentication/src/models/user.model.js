@@ -9,7 +9,7 @@ const { v4: uuidv4 } = require("uuid");
 const bcrypt = require("bcrypt");
 const AzureBlobStorageService = require("../services/azure-blob-storage-kyc/azure-blob-storage.service");
 const SmileIDService = require("../services/smile-id-kyc/smile-id.service");
-const { logger } = require("@azure/storage-blob");
+const { logger } = require("../utils/logger");
 /**
  * User model - Handles all user-related database operations
  */

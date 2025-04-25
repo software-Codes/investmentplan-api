@@ -72,7 +72,7 @@ class AzureBlobStorageService {
       // Create container if it doesn't exist
       try {
         await containerClient.createIfNotExists({
-          access: "private", // Ensure documents are not publicly accessible
+          access: "blob", // Or "container" depending on your needs
         });
       } catch (containerError) {
         logger.warn(
@@ -137,8 +137,8 @@ class AzureBlobStorageService {
         permissions: "r", // Read-only permissions
       };
 
-      const sasToken = await blobClient.generateSasToken(sasOptions);
-      return `${blobClient.url}?${sasToken}`;
+      // Use the correct method to generate SAS URL
+      return await blobClient.generateSasUrl(sasOptions);
     } catch (error) {
       logger.error(`Failed to generate SAS URL: ${error.message}`);
       return null;

@@ -58,12 +58,14 @@ class SmileIDService {
         job_id: `doc_verify_${Date.now()}`,
         job_type: jobType,
       };
+
       // Prepare ID info
       const idInfo = {
         country: data.countryCode,
         id_type: data.documentType,
         id_number: data.documentNumber,
       };
+
       // Prepare image(s)
       let images = {};
       if (Buffer.isBuffer(data.documentImage)) {
@@ -77,17 +79,22 @@ class SmileIDService {
           "Document image must be provided as Buffer or base64 string"
         );
       }
+
       // Prepare optional callback
       const options = {};
       if (this.config.callbackUrl) {
         options.callback_url = this.config.callbackUrl;
-      } // Submit for verification
-      const response = await this.WebApi.submitJob(
+      }
+
+      // Fixed: Use the correct SDK method
+      // Check the latest Smile ID SDK documentation for the correct method name
+      const response = await this.WebApi.submit_job(
         jobParams,
         idInfo,
         images,
         options
       );
+
       logger.info(`Document verification initiated for user ${data.userId}`);
       return response;
     } catch (error) {
@@ -108,10 +115,12 @@ class SmileIDService {
         `Getting verification status for user ${userId}, job ${jobId}`
       );
 
-      const response = await this.WebApi.getJobStatus({
+      // Fixed: Use the correct SDK method name
+      const response = await this.WebApi.get_job_status({
         user_id: userId,
         job_id: jobId,
       });
+
       logger.info(`Retrieved verification status for job ${jobId}`);
       return response;
     } catch (error) {
