@@ -8,7 +8,7 @@ const { pool, query } = require("../Config/neon-database");
 const { v4: uuidv4 } = require("uuid");
 const bcrypt = require("bcrypt");
 const AzureBlobStorageService = require("../services/azure-blob-storage-kyc/azure-blob-storage.service");
-const smileIDService = require("../services/smile-id-kyc/smile-id.service");
+const SmileIDService = require("../services/smile-id-kyc/smile-id.service");
 const { logger } = require("@azure/storage-blob");
 /**
  * User model - Handles all user-related database operations
@@ -509,11 +509,13 @@ class User {
     contentType
   ) {
     logger.info(`Processing KYC document submission for user: ${userId}`);
+
     try {
       // Validate input parameters
       if (!userId || !documentData || !fileBuffer) {
         throw new Error("Missing required parameters for document submission");
       }
+
       // Validate document type against enum values
       const validDocTypes = ["national_id", "drivers_license", "passport"];
       if (!validDocTypes.includes(documentData.documentType)) {
@@ -529,11 +531,13 @@ class User {
         callbackUrl: process.env.SMILE_ID_CALLBACK_URL,
         environment: process.env.SMILE_ID_ENVIRONMENT || "test",
       });
+
       const blobStorage = new AzureBlobStorageService({
         accountName: process.env.AZURE_STORAGE_ACCOUNT_NAME,
         accountKey: process.env.AZURE_STORAGE_ACCOUNT_KEY,
         containerName: process.env.AZURE_KYC_CONTAINER_NAME || "kyc-documents",
       });
+
       // 1. Upload document to Azure Blob Storage
       const uploadResult = await blobStorage.uploadDocument({
         userId,
@@ -542,9 +546,11 @@ class User {
         fileName,
         contentType,
       });
+
       logger.info(
         `Document uploaded to blob storage: ${uploadResult.blobStoragePath}`
       );
+
       // 2. Submit document to Smile ID for verification
       const smileDocumentType = this._mapToSmileIDDocumentType(
         documentData.documentType
@@ -557,42 +563,49 @@ class User {
         documentNumber: documentData.documentNumber,
         documentImage: fileBuffer,
       };
+
       const verificationResponse = await smileIDService.verifyDocument(
         verificationData
       );
+
       if (!verificationResponse || !verificationResponse.job_id) {
         throw new Error("Invalid verification response from Smile ID");
       }
+
       logger.info(
         `Document verification initiated with Smile ID, job ID: ${verificationResponse.job_id}`
       );
+
       // 3. Store document details in database
       const documentId = uuidv4();
       const currentDate = new Date().toISOString();
+
       // Check if user already has a document of this type
       const existingDoc = await query(
         `SELECT document_id FROM kyc_documents 
-           WHERE user_id = $1 AND document_type = $2 
-           LIMIT 1`,
+         WHERE user_id = $1 AND document_type = $2 
+         LIMIT 1`,
         [userId, documentData.documentType]
       );
+
       let result;
+
       if (existingDoc.rows.length > 0) {
         // Update existing document
         const updateQuery = `
-            UPDATE kyc_documents SET
-              document_number = $1,
-              document_country = $2,
-              blob_storage_path = $3,
-              blob_storage_url = $4,
-              verification_status = $5,
-              verification_reference = $6,
-              verification_method = $7,
-              uploaded_at = $8,
-              updated_at = $9
-            WHERE user_id = $10 AND document_type = $11
-            RETURNING *;
-          `;
+          UPDATE kyc_documents SET
+            document_number = $1,
+            document_country = $2,
+            blob_storage_path = $3,
+            blob_storage_url = $4,
+            verification_status = $5,
+            verification_reference = $6,
+            verification_method = $7,
+            uploaded_at = $8,
+            updated_at = $9
+          WHERE user_id = $10 AND document_type = $11
+          RETURNING *;
+        `;
 
         const updateValues = [
           documentData.documentNumber,
@@ -613,23 +626,23 @@ class User {
       } else {
         // Insert new document
         const insertQuery = `
-            INSERT INTO kyc_documents (
-              document_id,
-              user_id,
-              document_type,
-              document_number,
-              document_country,
-              blob_storage_path,
-              blob_storage_url,
-              verification_status,
-              verification_reference,
-              verification_method,
-              uploaded_at,
-              created_at,
-              updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-            RETURNING *;
-          `;
+          INSERT INTO kyc_documents (
+            document_id,
+            user_id,
+            document_type,
+            document_number,
+            document_country,
+            blob_storage_path,
+            blob_storage_url,
+            verification_status,
+            verification_reference,
+            verification_method,
+            uploaded_at,
+            created_at,
+            updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          RETURNING *;
+        `;
 
         const insertValues = [
           documentId,
@@ -650,7 +663,8 @@ class User {
         result = await query(insertQuery, insertValues);
         logger.info(`Created new KYC document record for user ${userId}`);
       }
-      //return the document data
+
+      // Return the document data
       return result.rows[0];
     } catch (error) {
       logger.error(`Failed to submit KYC document: ${error.message}`, {
@@ -659,6 +673,7 @@ class User {
       throw new Error(`Document submission failed: ${error.message}`);
     }
   }
+
   /**
    * Checks the verification status of a KYC document
    *
@@ -673,29 +688,35 @@ class User {
         `SELECT * FROM kyc_documents WHERE document_id = $1 AND user_id = $2`,
         [documentId, userId]
       );
+
       if (docResult.rows.length === 0) {
         throw new Error("Document not found");
       }
+
       const document = docResult.rows[0];
 
       // Skip verification check if already verified or rejected
       if (["verified", "rejected"].includes(document.verification_status)) {
         return document;
       }
+
       // Initialize Smile ID service
       const smileIDService = new SmileIDService({
         apiKey: process.env.SMILE_ID_API_KEY,
         partnerId: process.env.SMILE_ID_PARTNER_ID,
         environment: process.env.SMILE_ID_ENVIRONMENT || "test",
       });
+
       // Check verification status
       const verificationResult = await smileIDService.getVerificationStatus(
         userId,
         document.verification_reference
       );
+
       // Map Smile ID status to our status
       let newStatus = "pending";
       let verificationNotes = null;
+
       if (verificationResult.ResultCode === "1012") {
         newStatus = "verified";
       } else if (
@@ -705,6 +726,7 @@ class User {
         verificationNotes =
           verificationResult.ResultText || "Verification failed";
       }
+
       // Update document status in database
       const updateQuery = `
         UPDATE kyc_documents SET
@@ -715,8 +737,10 @@ class User {
         WHERE document_id = $5
         RETURNING *;
       `;
+
       const currentDate = new Date().toISOString();
       const verifiedAt = newStatus === "verified" ? currentDate : null;
+
       const updateResult = await query(updateQuery, [
         newStatus,
         verificationNotes,
@@ -724,6 +748,7 @@ class User {
         currentDate,
         documentId,
       ]);
+
       logger.info(
         `Updated document verification status to ${newStatus} for document ${documentId}`
       );
@@ -737,13 +762,14 @@ class User {
       throw new Error(`Verification status check failed: ${error.message}`);
     }
   }
+
   /**
    * Get all KYC documents for a user
    *
    * @param {string} userId - User ID
    * @returns {Promise<Array>} - User's documents
    */
-  static async getUserDocuments() {
+  static async getUserDocuments(userId) {
     try {
       const result = await query(
         `SELECT * FROM kyc_documents WHERE user_id = $1 ORDER BY updated_at DESC`,
@@ -755,6 +781,7 @@ class User {
       throw new Error(`Could not retrieve user documents: ${error.message}`);
     }
   }
+
   /**
    * Maps our document types to Smile ID document types
    *
@@ -768,6 +795,7 @@ class User {
       drivers_license: "DRIVERS_LICENSE",
       passport: "PASSPORT",
     };
+
     return mapping[internalType] || "ID_CARD";
   }
   /**

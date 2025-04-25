@@ -156,7 +156,7 @@ const createApp = () => {
   // apis for the admin
   app.use("/api/v1/admin", adminRoutes);
   //apis for document kyc verification
-  app.use("api/v1/kyc", kycRoutes)
+  app.use("/api/v1/kyc", kycRoutes)
   //documentation apis
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 

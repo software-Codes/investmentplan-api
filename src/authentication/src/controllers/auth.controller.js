@@ -768,47 +768,44 @@ class AuthController {
    */
   static async uploadDocument(req, res, next) {
     try {
-      //check if the user is authenticated
-      if (!req.user || req.user.userId) {
-        // Check if user is authenticated
-        if (!req.user || !req.user.userId) {
-          return res.status(401).json({
-            success: false,
-            message: "User authentication required",
-          });
-        }
-        // Check if file is provided
-        if (!req.file) {
-          return res.status(400).json({
-            success: false,
-            message: "Document file is required",
-          });
-        }
-        // Validate required fields
-        const requiredFields = [
-          "documentType",
-          "documentNumber",
-          "documentCountry",
-        ];
-        const missingFields = requiredFields.filter(
-          (field) => !req.body[field]
-        );
-        if (missingFields.length > 0) {
-          return res.status(400).json({
-            success: false,
-            message: `Missing required fields: ${missingFields.join(", ")}`,
-          });
-        }
-        const { userId } = req.user;
-        const documentData = {
-          documentType: req.body.documentType,
-          documentNumber: req.body.documentNumber,
-          documentCountry: req.body.documentCountry,
-        };
-        const fileBuffer = req.file.buffer;
-        const fileName = req.file.originalname;
-        const contentType = req.file.mimetype;
+      // Check if user is authenticated
+      if (!req.user || !req.user.userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'User authentication required'
+        });
       }
+
+      // Check if file is provided
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: 'Document file is required'
+        });
+      }
+
+      // Validate required fields
+      const requiredFields = ['documentType', 'documentNumber', 'documentCountry'];
+      const missingFields = requiredFields.filter(field => !req.body[field]);
+      
+      if (missingFields.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Missing required fields: ${missingFields.join(', ')}`
+        });
+      }
+
+      const { userId } = req.user;
+      const documentData = {
+        documentType: req.body.documentType,
+        documentNumber: req.body.documentNumber,
+        documentCountry: req.body.documentCountry
+      };
+      
+      const fileBuffer = req.file.buffer;
+      const fileName = req.file.originalname;
+      const contentType = req.file.mimetype;
+
       // Submit document for verification
       const document = await User.submitKycDocument(
         userId,
@@ -817,26 +814,29 @@ class AuthController {
         fileName,
         contentType
       );
+
       logger.info(`Document uploaded successfully for user ${userId}`);
+      
       return res.status(200).json({
         success: true,
-        message: "Document submitted successfully for verification",
+        message: 'Document submitted successfully for verification',
         document: {
           documentId: document.document_id,
           documentType: document.document_type,
           verificationStatus: document.verification_status,
-          uploadedAt: document.uploaded_at,
-        },
+          uploadedAt: document.uploaded_at
+        }
       });
     } catch (error) {
       logger.error(`Document upload failed: ${error.message}`, { error });
-
+      
       return res.status(500).json({
         success: false,
-        message: `Could not process document upload: ${error.message}`,
+        message: `Could not process document upload: ${error.message}`
       });
     }
   }
+
   /**
    * Gets the verification status of a document
    *
