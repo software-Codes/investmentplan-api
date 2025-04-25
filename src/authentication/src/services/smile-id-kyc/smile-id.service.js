@@ -17,19 +17,29 @@ class SmileIDService {
     if (!apiKey || !partnerId) {
       throw new Error("Smile ID API key and Partner ID are required");
     }
+
+    // Set server value based on environment (0 for test, 1 for production)
+    const serverValue = environment === "production" ? "1" : "0";
+
+    // Initialize Smile Identity SDK with the correct parameters according to documentation
+    this.WebApi = new SmileIdentityCore.WebApi(
+      partnerId,
+      callbackUrl || "",
+      apiKey,
+      serverValue
+    );
+
     this.config = {
       apiKey,
       partnerId,
       callbackUrl,
       environment,
+      serverValue,
     };
-    // Initialize Smile Identity SDK
-    this.WebApi = new SmileIdentityCore.WebApi(
-      this.config.partnerId,
-      this.config.apiKey,
-      this.config.environment
+
+    logger.info(
+      `Smile ID service initialized in ${environment} environment (server: ${serverValue})`
     );
-    logger.info("Smile Id service initialized");
   }
 
   /**
@@ -48,16 +58,20 @@ class SmileIDService {
       logger.info(`Starting document verification for user: ${data.userId}`);
       const jobType = 5; // Document Verification job type
 
-      if (!data.documentNumber || data.documentNumber.trim() === '') {
-        throw new Error("Document number (id_number) is required for verification");
+      if (!data.documentNumber || data.documentNumber.trim() === "") {
+        throw new Error(
+          "Document number (id_number) is required for verification"
+        );
       }
 
-      const jobParams = {
+      // Create required tracking parameters
+      const partnerParams = {
         user_id: data.userId,
         job_id: `doc_verify_${Date.now()}`,
         job_type: jobType,
       };
 
+      // Create the ID info object
       const idInfo = {
         country: data.countryCode,
         id_type: data.documentType,
@@ -66,7 +80,7 @@ class SmileIDService {
 
       logger.info(`ID info for verification: ${JSON.stringify(idInfo)}`);
 
-      // Ensure documentImage is properly handled
+      // Prepare image details
       let imageDetails = [];
       let imageContent;
 
@@ -75,21 +89,32 @@ class SmileIDService {
       } else if (typeof data.documentImage === "string") {
         imageContent = data.documentImage;
       } else {
-        throw new Error("Document image must be provided as Buffer or base64 string");
+        throw new Error(
+          "Document image must be provided as Buffer or base64 string"
+        );
       }
 
+      // Use image_type_id 3 for base64 encoded front of ID document
       imageDetails.push({
-        image_type_id: 3, // Base64 encoded front of ID
+        image_type_id: 3,
         image: imageContent,
       });
 
-      const options = {};
+      // Set options for the job
+      const options = {
+        return_job_status: true,
+        return_history: false,
+        return_image_links: false,
+      };
+
+      // Add callback URL if provided
       if (this.config.callbackUrl) {
         options.callback_url = this.config.callbackUrl;
       }
 
+      // Submit the job
       const response = await this.WebApi.submit_job(
-        jobParams,
+        partnerParams,
         imageDetails,
         idInfo,
         options

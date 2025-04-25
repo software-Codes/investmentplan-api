@@ -922,7 +922,55 @@ class AuthController {
         userId: callbackData.user_id,
       });
 
-      // Process the callback data (e.g., update your database)
+      // Find the document with this verification reference
+      const docResult = await query(
+        `SELECT document_id, user_id FROM kyc_documents WHERE verification_reference = $1`,
+        [callbackData.job_id]
+      );
+
+      if (docResult.rows.length === 0) {
+        logger.warn(
+          `No document found for verification job: ${callbackData.job_id}`
+        );
+        return res.status(404).json({ message: "Document not found" });
+      }
+
+      const document = docResult.rows[0];
+
+      // Update document status based on callback result
+      let newStatus = "pending";
+      let verificationNotes = null;
+
+      if (callbackData.ResultCode === "1012") {
+        newStatus = "verified";
+      } else if (["1013", "1014", "1015"].includes(callbackData.ResultCode)) {
+        newStatus = "rejected";
+        verificationNotes = callbackData.ResultText || "Verification failed";
+      }
+
+      // Update document status
+      const currentDate = new Date().toISOString();
+      const verifiedAt = newStatus === "verified" ? currentDate : null;
+
+      await query(
+        `UPDATE kyc_documents SET 
+         verification_status = $1,
+         verification_notes = $2,
+         verified_at = $3,
+         updated_at = $4
+         WHERE document_id = $5`,
+        [
+          newStatus,
+          verificationNotes,
+          verifiedAt,
+          currentDate,
+          document.document_id,
+        ]
+      );
+
+      logger.info(
+        `Updated document status to ${newStatus} via callback for job ${callbackData.job_id}`
+      );
 
       return res
         .status(200)
