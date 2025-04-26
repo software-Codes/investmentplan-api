@@ -731,8 +731,6 @@ class AuthController {
       next(error);
     }
   }
-
-
   /**
    * Handles document upload and verification initialization
    *
@@ -740,97 +738,121 @@ class AuthController {
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware function
    */
-  static async uploadDocument(req, res, next) {
-    try {
-      if (!req.user || !req.user.userId) {
-        return res.status(401).json({
-          success: false,
-          message: "User authentication required",
-        });
-      }
-  
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          message: "Document file is required",
-        });
-      }
-  
-      // Validate required fields
-      const { documentType, documentNumber, documentCountry } = req.body;
-  
-      if (!documentType || !documentNumber || !documentCountry) {
-        return res.status(400).json({
-          success: false,
-          message: "documentType, documentNumber, and documentCountry are required",
-        });
-      }
-  
-      // Validate document type
-      const validDocTypes = ["national_id", "drivers_license", "passport"];
-      if (!validDocTypes.includes(documentType)) {
-        return res.status(400).json({
-          success: false,
-          message: `Invalid document type. Must be one of: ${validDocTypes.join(", ")}`,
-        });
-      }
-  
-      // Validate country code (should be ISO country code)
-      if (documentCountry.length !== 2) {
-        return res.status(400).json({
-          success: false,
-          message: "documentCountry must be a valid 2-letter ISO country code",
-        });
-      }
-  
-      const { userId } = req.user;
-      const documentData = {
-        documentType,
-        documentNumber,
-        documentCountry,
-      };
-  
-      // Ensure the file buffer is properly handled
-      let fileBuffer;
-      if (Buffer.isBuffer(req.file.buffer)) {
-        fileBuffer = req.file.buffer;
-      } else {
-        // If not a Buffer, convert to Buffer (shouldn't happen with correct multer setup)
-        fileBuffer = Buffer.from(req.file.buffer);
-      }
-  
-      const fileName = req.file.originalname;
-      const contentType = req.file.mimetype;
-  
-      const document = await User.submitKycDocument(
-        userId,
-        documentData,
-        fileBuffer,
-        fileName,
-        contentType
-      );
-  
-      logger.info(`Document uploaded successfully for user ${userId}`);
-  
-      return res.status(200).json({
-        success: true,
-        message: "Document submitted successfully for verification",
-        document: {
-          documentId: document.document_id,
-          documentType: document.document_type,
-          verificationStatus: document.verification_status,
-          uploadedAt: document.uploaded_at,
-        },
-      });
-    } catch (error) {
-      logger.error(`Document upload failed: ${error.message}`, { error });
-  
-      return res.status(500).json({
+ /**
+ * Handles document upload and verification initialization
+ *
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ */
+static async uploadDocument(req, res, next) {
+  try {
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({
         success: false,
-        message: `Could not process document upload: ${error.message}`,
+        message: "User authentication required",
       });
     }
+
+    if (!req.files) {
+      return res.status(400).json({
+        success: false,
+        message: "Document files are required",
+      });
+    }
+
+    // Check for required files
+    if (!req.files.selfieImage || !req.files.documentImage) {
+      return res.status(400).json({
+        success: false,
+        message: "Both selfie image and document image are required",
+      });
+    }
+
+    // Validate required fields
+    const { documentType, documentNumber, documentCountry } = req.body;
+
+    if (!documentType || !documentNumber || !documentCountry) {
+      return res.status(400).json({
+        success: false,
+        message: "documentType, documentNumber, and documentCountry are required",
+      });
+    }
+
+    // Validate document type
+    const validDocTypes = ["national_id", "drivers_license", "passport"];
+    if (!validDocTypes.includes(documentType)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid document type. Must be one of: ${validDocTypes.join(", ")}`,
+      });
+    }
+
+    // Validate country code (should be ISO country code)
+    if (documentCountry.length !== 2) {
+      return res.status(400).json({
+        success: false,
+        message: "documentCountry must be a valid 2-letter ISO country code",
+      });
+    }
+
+    const { userId } = req.user;
+    const documentData = {
+      documentType,
+      documentNumber,
+      documentCountry,
+    };
+
+    // Log file information for debugging
+    logger.info(`Received selfie image file: ${req.files.selfieImage[0].originalname}, size: ${req.files.selfieImage[0].size} bytes`);
+    logger.info(`Received document image file: ${req.files.documentImage[0].originalname}, size: ${req.files.documentImage[0].size} bytes`);
+    
+    // Access the file buffers
+    const selfieBuffer = req.files.selfieImage[0].buffer;
+    const documentBuffer = req.files.documentImage[0].buffer;
+    
+    // Optional document back image
+    let documentBackBuffer = null;
+    if (req.files.documentBackImage && req.files.documentBackImage[0]) {
+      logger.info(`Received document back image file: ${req.files.documentBackImage[0].originalname}, size: ${req.files.documentBackImage[0].size} bytes`);
+      documentBackBuffer = req.files.documentBackImage[0].buffer;
+    }
+
+    const fileName = req.files.documentImage[0].originalname;
+    const contentType = req.files.documentImage[0].mimetype;
+
+    const document = await User.submitKycDocument(
+      userId,
+      documentData,
+      selfieBuffer,
+      documentBuffer,
+      documentBackBuffer,
+      fileName,
+      contentType
+    );
+
+    logger.info(`Document uploaded successfully for user ${userId}`);
+
+    return res.status(200).json({
+      success: true,
+      message: "Document submitted successfully for verification",
+      document: {
+        documentId: document.document_id,
+        documentType: document.document_type,
+        verificationStatus: document.verification_status,
+        uploadedAt: document.uploaded_at,
+      },
+    });
+  } catch (error) {
+    logger.error(`Document upload failed: ${error.message}`, { error });
+
+    return res.status(500).json({
+      success: false,
+      message: `Could not process document upload: ${error.message}`,
+    });
   }
+}
+
   /**
    * Gets the verification status of a document
    *

@@ -496,7 +496,9 @@ class User {
    * @param {string} documentData.documentType - Document type (national_id, passport, drivers_license)
    * @param {string} documentData.documentNumber - Document number/ID
    * @param {string} documentData.documentCountry - ISO country code
-   * @param {Buffer} fileBuffer - The document file as a buffer
+   * @param {Buffer} selfieBuffer - The selfie image as a buffer
+   * @param {Buffer} documentBuffer - The document front image as a buffer
+   * @param {Buffer} documentBackBuffer - The document back image as a buffer (optional)
    * @param {string} fileName - Original file name
    * @param {string} contentType - File MIME type
    * @returns {Promise<Object>} Submitted document data
@@ -504,7 +506,9 @@ class User {
   static async submitKycDocument(
     userId,
     documentData,
-    fileBuffer,
+    selfieBuffer,
+    documentBuffer,
+    documentBackBuffer = null,
     fileName,
     contentType
   ) {
@@ -512,7 +516,7 @@ class User {
 
     try {
       // Validate input parameters
-      if (!userId || !documentData || !fileBuffer) {
+      if (!userId || !documentData || !documentBuffer || !selfieBuffer) {
         throw new Error("Missing required parameters for document submission");
       }
 
@@ -542,7 +546,7 @@ class User {
       const uploadResult = await blobStorage.uploadDocument({
         userId,
         documentType: documentData.documentType,
-        fileBuffer,
+        fileBuffer: documentBuffer,
         fileName,
         contentType,
       });
@@ -564,14 +568,15 @@ class User {
         throw new Error("Document number is required for verification");
       }
 
-      // Prepare verification data with proper handling of documentImage
+      // Prepare verification data
       const verificationData = {
         userId,
         countryCode: documentData.documentCountry,
         documentType: smileDocumentType,
         documentNumber: documentData.documentNumber,
-        documentImage: fileBuffer, // Front of ID
-        // If you have both front and back, you would need to handle them properly here
+        selfieImage: selfieBuffer, // Add selfie image
+        documentImage: documentBuffer, // Front of ID
+        documentBackImage: documentBackBuffer, // Back of ID (optional)
       };
 
       logger.info(
@@ -602,8 +607,8 @@ class User {
       // Check if user already has a document of this type
       const existingDoc = await query(
         `SELECT document_id FROM kyc_documents 
-         WHERE user_id = $1 AND document_type = $2 
-         LIMIT 1`,
+       WHERE user_id = $1 AND document_type = $2 
+       LIMIT 1`,
         [userId, documentData.documentType]
       );
 
@@ -612,19 +617,19 @@ class User {
       if (existingDoc.rows.length > 0) {
         // Update existing document
         const updateQuery = `
-          UPDATE kyc_documents SET
-            document_number = $1,
-            document_country = $2,
-            blob_storage_path = $3,
-            blob_storage_url = $4,
-            verification_status = $5,
-            verification_reference = $6,
-            verification_method = $7,
-            uploaded_at = $8,
-            updated_at = $9
-          WHERE user_id = $10 AND document_type = $11
-          RETURNING *;
-        `;
+        UPDATE kyc_documents SET
+          document_number = $1,
+          document_country = $2,
+          blob_storage_path = $3,
+          blob_storage_url = $4,
+          verification_status = $5,
+          verification_reference = $6,
+          verification_method = $7,
+          uploaded_at = $8,
+          updated_at = $9
+        WHERE user_id = $10 AND document_type = $11
+        RETURNING *;
+      `;
 
         const updateValues = [
           documentData.documentNumber,
@@ -645,23 +650,23 @@ class User {
       } else {
         // Insert new document
         const insertQuery = `
-          INSERT INTO kyc_documents (
-            document_id,
-            user_id,
-            document_type,
-            document_number,
-            document_country,
-            blob_storage_path,
-            blob_storage_url,
-            verification_status,
-            verification_reference,
-            verification_method,
-            uploaded_at,
-            created_at,
-            updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-          RETURNING *;
-        `;
+        INSERT INTO kyc_documents (
+          document_id,
+          user_id,
+          document_type,
+          document_number,
+          document_country,
+          blob_storage_path,
+          blob_storage_url,
+          verification_status,
+          verification_reference,
+          verification_method,
+          uploaded_at,
+          created_at,
+          updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        RETURNING *;
+      `;
 
         const insertValues = [
           documentId,
@@ -802,25 +807,25 @@ class User {
   }
 
   /**
-   * Maps our internal document types to Smile ID document types
+   * Maps application document types to Smile ID document types
    *
-   * @param {string} documentType - Our internal document type
+   * @param {string} documentType - Application document type
    * @returns {string} - Smile ID document type
    */
   static _mapToSmileIDDocumentType(documentType) {
     const mapping = {
       national_id: "NATIONAL_ID",
-      drivers_license: "DRIVERS_LICENSE",
       passport: "PASSPORT",
+      drivers_license: "DRIVERS_LICENSE",
     };
 
-    return mapping[documentType] || "NATIONAL_ID";
+    return mapping[documentType] || documentType.toUpperCase();
   }
   /**
    * Initiates the account recovery process for a user
    * @param {Object} recoveryData - Data for account recovery
    * @param {string} [recoveryData.email] - User's email address
-   * @param {string} [recoveryData.phoneNumber] - User's phone number
+   * @param {string} [recoveryData.phoneNumber] - User's phone number`
    * @param {string} recoveryData.method - Recovery method ('email' or 'sms')
    * @returns {Promise<Object>} Recovery process result
    * @throws {Error} If recovery initiation fails

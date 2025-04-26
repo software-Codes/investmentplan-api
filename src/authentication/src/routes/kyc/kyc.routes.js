@@ -27,6 +27,13 @@ const upload = multer({
   },
 });
 
+// Setup file upload fields for selfie and document images
+const documentUpload = upload.fields([
+  { name: "selfieImage", maxCount: 1 },
+  { name: "documentImage", maxCount: 1 },
+  { name: "documentBackImage", maxCount: 1 }, // Optional
+]);
+
 //handle multer errors
 const handleMulterErrors = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
@@ -54,7 +61,7 @@ const handleMulterErrors = (err, req, res, next) => {
 router.post(
   "/documents",
   authenticate,
-  upload.single("documentFile"),
+  documentUpload,
   handleMulterErrors,
   AuthController.uploadDocument
 );
@@ -66,12 +73,8 @@ router.get(
   AuthController.getDocumentStatus
 );
 
-// Get all documents for the authenticated user (fixed missing slash)
-router.get(
-  "/documents",
-  authenticate,
-  AuthController.getUserDocuments
-);
+// Get all documents for the authenticated user
+router.get("/documents", authenticate, AuthController.getUserDocuments);
 
 // Webhook endpoint for smile id callbacks
 router.post(

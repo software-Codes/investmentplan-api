@@ -1,7 +1,6 @@
 const SmileIdentityCore = require("smile-identity-core");
 const { logger } = require("../../utils/logger");
 
-
 class SmileIDService {
   /**
    * Initializes the Smile ID Service with the required credentials
@@ -51,94 +50,60 @@ class SmileIDService {
    * @param {string} data.countryCode - ISO country code (e.g., 'NG', 'KE')
    * @param {string} data.documentType - Type of document (PASSPORT, ID_CARD, etc.)
    * @param {string} data.documentNumber - The ID number on the document
-   * @param {Buffer|string} data.documentImage - Document image buffer or base64 string
+   * @param {Buffer|string} data.selfieImage - Selfie image buffer or base64 string
+   * @param {Buffer|string} data.documentImage - Front document image buffer or base64 string
+   * @param {Buffer|string} data.documentBackImage - Back document image buffer or base64 string (optional)
    * @returns {Promise<Object>} - Verification result
    */
   async verifyDocument(data) {
     try {
       logger.info(`Starting document verification for user: ${data.userId}`);
 
-      // Document Verification job type
-      const jobType = 6; // Changed to 6 - Document Verification with ID card front and back
-
       if (!data.documentNumber || data.documentNumber.trim() === "") {
         throw new Error("Document number is required for verification");
       }
 
-      // Create required tracking parameters
+      if (!data.selfieImage) {
+        throw new Error("Selfie image is required for verification");
+      }
+
+      // Create required tracking parameters for Smile ID API
       const partnerParams = {
         user_id: data.userId,
         job_id: `doc_verify_${Date.now()}`,
-        job_type: jobType,
+        job_type: 6, // Document Verification with ID card
       };
 
       // Create the ID info object
       const idInfo = {
         country: data.countryCode,
         id_type: data.documentType,
+        id_number: data.documentNumber,
       };
 
       logger.info(`ID info for verification: ${JSON.stringify(idInfo)}`);
 
-      // Prepare image details
+      // Prepare image details for the Smile ID API
       let imageDetails = [];
 
-      // Transform image to base64 if it's a buffer
-      let selfieImage = null;
-      let idFrontImage = null;
-      let idBackImage = null;
+      // Process selfie image
+      imageDetails.push(this.processImage(data.selfieImage, 0)); // 0 = selfie
 
-      if (Buffer.isBuffer(data.selfieImage)) {
-        selfieImage = data.selfieImage.toString("base64");
-      } else if (typeof data.selfieImage === "string") {
-        selfieImage = data.selfieImage;
+      // Process document front image
+      imageDetails.push(this.processImage(data.documentImage, 1)); // 1 = id card front
+
+      // Process document back image if available
+      if (data.documentBackImage) {
+        imageDetails.push(this.processImage(data.documentBackImage, 5)); // 5 = id card back
       }
 
-      if (Buffer.isBuffer(data.documentImage)) {
-        idFrontImage = data.documentImage.toString("base64");
-      } else if (typeof data.documentImage === "string") {
-        idFrontImage = data.documentImage;
-      }
-
-      if (Buffer.isBuffer(data.documentBackImage)) {
-        idBackImage = data.documentBackImage.toString("base64");
-      } else if (typeof data.documentBackImage === "string") {
-        idBackImage = data.documentBackImage;
-      }
-
-      // Add selfie image (type 0)
-      if (selfieImage) {
-        imageDetails.push({
-          image_type_id: 0,
-          image: selfieImage,
-        });
-      }
-
-      // Add ID front image (type 1)
-      if (idFrontImage) {
-        imageDetails.push({
-          image_type_id: 1,
-          image: idFrontImage,
-        });
-      }
-
-      // Add ID back image (type 5)
-      if (idBackImage) {
-        imageDetails.push({
-          image_type_id: 5,
-          image: idBackImage,
-        });
-      }
-
-      if (imageDetails.length === 0) {
-        throw new Error("At least one document image must be provided");
-      }
+      logger.info(`Prepared ${imageDetails.length} images for verification`);
 
       // Set options for the job
       const options = {
         return_job_status: true,
         return_history: true,
-        return_images: true,
+        return_images: false, // Set to false to reduce response payload size
       };
 
       // Add callback URL if provided
@@ -146,7 +111,8 @@ class SmileIDService {
         options.callback_url = this.config.callbackUrl;
       }
 
-      // Submit the job
+      // Submit the verification job using the SDK
+      // The SDK will handle adding source_sdk, signature, timestamp, etc.
       const response = await this.WebApi.submit_job(
         partnerParams,
         imageDetails,
@@ -160,6 +126,40 @@ class SmileIDService {
       logger.error(`Smile ID verification failed: ${error.message}`, { error });
       throw new Error(`Document verification failed: ${error.message}`);
     }
+  }
+
+  /**
+   * Helper function to process image data for Smile ID API
+   * 
+   * @param {Buffer|string} image - Image as Buffer or base64 string
+   * @param {number} imageTypeId - Image type ID (0=selfie, 1=ID front, 5=ID back)
+   * @returns {Object} Formatted image object for Smile ID API
+   */
+  processImage(image, imageTypeId) {
+    if (Buffer.isBuffer(image)) {
+      return {
+        image_type_id: imageTypeId,
+        image: image.toString("base64"),
+      };
+    } else if (typeof image === "string") {
+      if (image.startsWith("data:image/")) {
+        // Extract the base64 part from data URI
+        return { 
+          image_type_id: imageTypeId, 
+          image: image.split(",")[1]
+        };
+      } else {
+        // Validate base64 string
+        if (!/^[A-Za-z0-9+/=]+$/.test(image)) {
+          throw new Error(`Invalid base64 format for image type ${imageTypeId}`);
+        }
+        return { 
+          image_type_id: imageTypeId, 
+          image: image 
+        };
+      }
+    }
+    throw new Error(`Invalid image format for image type ${imageTypeId}`);
   }
 
   /**
