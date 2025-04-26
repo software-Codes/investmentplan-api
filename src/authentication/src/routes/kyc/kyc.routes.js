@@ -26,6 +26,7 @@ const upload = multer({
     }
   },
 });
+
 //handle multer errors
 const handleMulterErrors = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
@@ -49,7 +50,7 @@ const handleMulterErrors = (err, req, res, next) => {
   next();
 };
 
-//upload  a new kyc document
+// Upload a new KYC document
 router.post(
   "/documents",
   authenticate,
@@ -57,17 +58,22 @@ router.post(
   handleMulterErrors,
   AuthController.uploadDocument
 );
-//get verification status of a specific document
+
+// Get verification status of a specific document
 router.get(
   "/documents/:documentId",
   authenticate,
   AuthController.getDocumentStatus
 );
 
-//get all documents for the authenticated user
-router.get("documents", authenticate, AuthController.getUserDocuments);
+// Get all documents for the authenticated user (fixed missing slash)
+router.get(
+  "/documents",
+  authenticate,
+  AuthController.getUserDocuments
+);
 
-//webhook endpoint for smile id callbacks
+// Webhook endpoint for smile id callbacks
 router.post(
   "/verification-callback",
   express.json(),

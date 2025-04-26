@@ -731,33 +731,7 @@ class AuthController {
       next(error);
     }
   }
-  // static async uploadDocuments(req, res, next) {
-  //   try {
-  //     const { userId } = req.user;
-  //     const documentData = req.body;
-  //     const fileBuffer = req.file.buffer; //ensure that multer is configured to handle file uploads
 
-  //     const fileName = req.file.originalname;
-  //     // Submit documents to Smile ID and Azure Blob Storage
-  //     const document = await user.submitDocuments(
-  //       userId,
-  //       documentData,
-  //       fileBuffer,
-  //       fileName
-  //     );
-  //     return res.status(200).json({
-  //       success: true,
-  //       message: 'Documents submitted successfully',
-  //       document,
-  //     })
-  //   } catch (error) {
-  //     res.status(500).json({
-  //       success: false,
-  //       message: `could not submit documents: ${error.message}`,
-  //     });
-  //     next(error);
-  //   }
-  // }
 
   /**
    * Handles document upload and verification initialization
@@ -774,21 +748,48 @@ class AuthController {
           message: "User authentication required",
         });
       }
-
+  
       if (!req.file) {
         return res.status(400).json({
           success: false,
           message: "Document file is required",
         });
       }
-
+  
+      // Validate required fields
+      const { documentType, documentNumber, documentCountry } = req.body;
+  
+      if (!documentType || !documentNumber || !documentCountry) {
+        return res.status(400).json({
+          success: false,
+          message: "documentType, documentNumber, and documentCountry are required",
+        });
+      }
+  
+      // Validate document type
+      const validDocTypes = ["national_id", "drivers_license", "passport"];
+      if (!validDocTypes.includes(documentType)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid document type. Must be one of: ${validDocTypes.join(", ")}`,
+        });
+      }
+  
+      // Validate country code (should be ISO country code)
+      if (documentCountry.length !== 2) {
+        return res.status(400).json({
+          success: false,
+          message: "documentCountry must be a valid 2-letter ISO country code",
+        });
+      }
+  
       const { userId } = req.user;
       const documentData = {
-        documentType: req.body.documentType,
-        documentNumber: req.body.documentNumber,
-        documentCountry: req.body.documentCountry,
+        documentType,
+        documentNumber,
+        documentCountry,
       };
-
+  
       // Ensure the file buffer is properly handled
       let fileBuffer;
       if (Buffer.isBuffer(req.file.buffer)) {
@@ -797,10 +798,10 @@ class AuthController {
         // If not a Buffer, convert to Buffer (shouldn't happen with correct multer setup)
         fileBuffer = Buffer.from(req.file.buffer);
       }
-
+  
       const fileName = req.file.originalname;
       const contentType = req.file.mimetype;
-
+  
       const document = await User.submitKycDocument(
         userId,
         documentData,
@@ -808,9 +809,9 @@ class AuthController {
         fileName,
         contentType
       );
-
+  
       logger.info(`Document uploaded successfully for user ${userId}`);
-
+  
       return res.status(200).json({
         success: true,
         message: "Document submitted successfully for verification",
@@ -823,14 +824,13 @@ class AuthController {
       });
     } catch (error) {
       logger.error(`Document upload failed: ${error.message}`, { error });
-
+  
       return res.status(500).json({
         success: false,
         message: `Could not process document upload: ${error.message}`,
       });
     }
   }
-
   /**
    * Gets the verification status of a document
    *

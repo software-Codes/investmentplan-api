@@ -548,13 +548,14 @@ class User {
       });
 
       logger.info(
-        `Document uploaded to blob storage: ${uploadResult.blobStoragePath}`
+        `Document uploaded successfully to blob storage: ${uploadResult.blobStoragePath}`
       );
 
       // 2. Submit document to Smile ID for verification
       const smileDocumentType = this._mapToSmileIDDocumentType(
         documentData.documentType
       );
+
       // Verify that documentData.documentNumber is properly set
       if (
         !documentData.documentNumber ||
@@ -569,14 +570,16 @@ class User {
         countryCode: documentData.documentCountry,
         documentType: smileDocumentType,
         documentNumber: documentData.documentNumber,
-        documentImage: fileBuffer, // Ensure this is a Buffer
+        documentImage: fileBuffer, // Front of ID
+        // If you have both front and back, you would need to handle them properly here
       };
+
       logger.info(
         `Verification data: ${JSON.stringify({
           userId: verificationData.userId,
           countryCode: verificationData.countryCode,
           documentType: verificationData.documentType,
-          documentNumber: verificationData.documentNumber, // Log to verify it's present
+          documentNumber: verificationData.documentNumber,
         })}`
       );
 
@@ -799,20 +802,19 @@ class User {
   }
 
   /**
-   * Maps our document types to Smile ID document types
+   * Maps our internal document types to Smile ID document types
    *
-   * @param {string} internalType - Our internal document type
+   * @param {string} documentType - Our internal document type
    * @returns {string} - Smile ID document type
-   * @private
    */
-  static _mapToSmileIDDocumentType(internalType) {
+  static _mapToSmileIDDocumentType(documentType) {
     const mapping = {
-      national_id: "ID_CARD",
+      national_id: "NATIONAL_ID",
       drivers_license: "DRIVERS_LICENSE",
       passport: "PASSPORT",
     };
 
-    return mapping[internalType] || "ID_CARD";
+    return mapping[documentType] || "NATIONAL_ID";
   }
   /**
    * Initiates the account recovery process for a user
