@@ -283,7 +283,7 @@ const {
 } = require("../middleware/rate-limiter");
 const { authenticate } = require("../middleware/auth.middleware");
 const multer = require("multer");
-const upload = multer({storage: multer.memoryStorage() })
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Apply general rate limiting to all routes
 router.use(apiLimiter);
