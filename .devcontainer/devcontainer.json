@@ -1,5 +1,5 @@
 {
-    "name": "lh-infra-nodelab",
+    "name": "investmentPlan-backend-api",
     "dockerFile": "Dockerfile.dev",
     "customizations": {
       "vscode": {
