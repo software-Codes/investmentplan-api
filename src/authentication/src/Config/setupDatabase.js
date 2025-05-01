@@ -85,9 +85,9 @@ async function createTables() {
           updated_at TIMESTAMP WITH TIME ZONE NOT NULL
       );
     `);
-// Add this to your createTables function
+    // Add this to your createTables function
 
-await query(`
+    await query(`
   CREATE TABLE IF NOT EXISTS admins (
     admin_id UUID PRIMARY KEY,
     full_name VARCHAR(255) NOT NULL,
@@ -148,6 +148,23 @@ await query(`
       );
     `);
 
+    await query(
+      `
+      CREATE TABLE IF NOT EXISTS deposits (
+  deposit_id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(user_id),
+  amount NUMERIC(12, 2) NOT NULL,
+  binance_tx_id VARCHAR(255),
+  status VARCHAR(50) DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  verified_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  CONSTRAINT valid_amount CHECK (amount >= 10),
+  CONSTRAINT valid_status CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
+);
+      `
+    );
+
     logger.info("All tables created successfully");
   } catch (error) {
     logger.error(`Error creating tables: ${error.message}`, { error });
@@ -185,6 +202,12 @@ async function createIndexes() {
     await query(
       `CREATE INDEX IF NOT EXISTS idx_kyc_verification_reference ON kyc_documents(verification_reference);`
     );
+    // deposits tables
+    await query(`CREATE INDEX idx_deposits_user_id ON deposits(user_id);`);
+    await query(
+      `CREATE INDEX idx_deposits_binance_tx_id ON deposits(binance_tx_id);`
+    );
+    await query(`CREATE INDEX idx_deposits_status ON deposits(status);`);
 
     logger.info("All indexes created successfully");
   } catch (error) {

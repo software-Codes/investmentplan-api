@@ -186,14 +186,14 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
       // Validate environment variables
       validateEnv();
 
-      // // Database initialization
-      // console.log("\n[Database] Initializing database schema...");
-      // await setupDatabase();
-      // console.log("[Database] Schema initialized successfully");
+      // Database initialization
+      console.log("\n[Database] Initializing database schema...");
+      await setupDatabase();
+      console.log("[Database] Schema initialized successfully");
 
-      // // Establish database connection
-      // await database.checkDatabaseConnection();
-      // console.log("[Database] Connection verified\n");
+      // Establish database connection
+      await database.checkDatabaseConnection();
+      console.log("[Database] Connection verified\n");
 
       // Configure application
       setupMiddleware();

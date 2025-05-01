@@ -1,165 +1,239 @@
-## Automatic Deposit System with Binance API
+# Investment Platform with Binance Integration
 
-### Overview
+## Overview
 
-This project provides an automatic deposit system that allows users to deposit funds directly into an admin-controlled Binance account. It tracks incoming deposits via the Binance API, enforces a minimum deposit, updates user balances in real time, and logs all transactions.
+This platform provides an automated investment system with Binance integration for deposits and withdrawals. It features multiple wallet types, compound interest investments, and a referral system.
 
-### Table of Contents
+## Features
 
-1. [Features](#features)
-2. [Prerequisites](#prerequisites)
-3. [Installation](#installation)
-4. [Configuration](#configuration)
-5. [Database Schema](#database-schema)
-6. [API Reference](#api-reference)
-7. [Process Flow](#process-flow)
-8. [Error Handling](#error-handling)
-9. [Security Considerations](#security-considerations)
+### Wallet System
+- **Account Wallet**: Primary deposit wallet
+- **Trading Wallet**: Investment-specific wallet
+- **Referral Wallet**: For referral bonuses
 
----
+### Investment Features
+- **Daily Returns**: 0.25% compound interest
+- **Minimum Investment**: $10
+- **Lock Periods**:
+  - Profit withdrawal: After 7 days
+  - Principal withdrawal: After 30 days
 
-### Features
+### Deposit System
+- **Currency**: USDT only
+- **Minimum Deposit**: $10
+- **Method**: Direct Binance transfer
+- **Processing**: Automatic credit to account wallet
 
-- **Automatic Deposit Tracking**: Polls Binance API for new deposits.
-- **Real-Time Balance Updates**: Credits user accounts automatically.
-- **Minimum Deposit Enforcement**: Rejects deposits below $10.
-- **Detailed Logging**: Maintains full audit trail of deposits.
-- **User Notifications**: Notifies users of successful or failed deposits.
+### Withdrawal System
+- **Admin Approval Required**
+- **Processing Time**: 20 minutes
+- **Verification**: Manual admin verification
+- **Withdrawal Types**:
+  - Profit (after 7 days)
+  - Principal (after 30 days)
+  - Referral bonus (instant)
 
-### Prerequisites
+### Referral Program
+- **Bonus**: 10% of referee's first deposit
+- **Options**: 
+  - Instant withdrawal
+  - Reinvestment option
 
-- A Binance account with API access (API key & secret).
-- PostgreSQL database.
-- Node.js (v14+) and npm.
-- Environment variables management (e.g., dotenv).
-
-### Installation
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/your-repo/automatic-deposit-binance.git
-   cd automatic-deposit-binance
-   ```
-2. **Install dependencies**:
-   ```bash
-   npm install
-   ```
-
-### Configuration
-
-1. Create a `.env` file in the project root:
-   ```env
-   BINANCE_API_KEY=your_binance_api_key
-   BINANCE_API_SECRET=your_binance_api_secret
-   ADMIN_BINANCE_ADDRESS=your_admin_binance_address
-   DATABASE_URL=postgres://user:password@host:port/dbname
-   MINIMUM_DEPOSIT=10
-   ```
-2. Update any other environment variables as needed.
+## Technical Architecture
 
 ### Database Schema
 
 ```sql
--- Users table
+-- Users and Wallets
 CREATE TABLE users (
   user_id UUID PRIMARY KEY,
-  full_name VARCHAR(255) NOT NULL,
   email VARCHAR(255) UNIQUE NOT NULL,
-  phone_number VARCHAR(20) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
-  account_balance NUMERIC(12, 2) DEFAULT 0.00,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  referral_code VARCHAR(10) UNIQUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Deposits table
-CREATE TABLE deposits (
-  id UUID PRIMARY KEY,
+CREATE TABLE wallets (
+  wallet_id UUID PRIMARY KEY,
   user_id UUID REFERENCES users(user_id),
-  binance_tx_id VARCHAR(255) NOT NULL,
+  wallet_type VARCHAR(50) CHECK (wallet_type IN ('account', 'trading', 'referral')),
+  balance NUMERIC(12, 2) DEFAULT 0.00,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Investments
+CREATE TABLE investments (
+  investment_id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(user_id),
   amount NUMERIC(12, 2) NOT NULL,
-  status VARCHAR(50) CHECK (status IN ('pending','completed','failed')),
-  memo VARCHAR(255),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  confirmed_at TIMESTAMPTZ
+  profit NUMERIC(12, 2) DEFAULT 0.00,
+  start_date TIMESTAMPTZ NOT NULL,
+  last_compound_date TIMESTAMPTZ,
+  status VARCHAR(50) DEFAULT 'active',
+  principal_locked BOOLEAN DEFAULT true
+);
+
+-- Transactions
+CREATE TABLE deposits (
+  deposit_id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(user_id),
+  amount NUMERIC(12, 2) NOT NULL,
+  binance_tx_id VARCHAR(255),
+  status VARCHAR(50) DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE withdrawals (
+  withdrawal_id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(user_id),
+  amount NUMERIC(12, 2) NOT NULL,
+  wallet_type VARCHAR(50),
+  binance_address VARCHAR(255),
+  status VARCHAR(50) DEFAULT 'pending',
+  admin_approved BOOLEAN DEFAULT false,
+  requested_at TIMESTAMPTZ DEFAULT NOW(),
+  completed_at TIMESTAMPTZ
 );
 ```
 
-### API Reference
+## API Reference
 
-#### 1. Request Deposit Address
+### Deposit Endpoints
 
-- **Endpoint**: `GET /api/deposit/address`
-- **Description**: Provides the admin's Binance deposit address and memo instructions for the user.
-- **Response**:
-  ```json
-  {
-    "deposit_address": "AdminBinanceAddress",
-    "memo_instruction": "Include your user ID in the memo field",
-    "user_id": "UserSpecificID",
-    "minimum_deposit": 10
-  }
-  ```
+```http
+GET /api/v1/deposit/address
+POST /api/v1/deposit/verify
+GET /api/v1/deposit/history
+```
 
-#### 2. Deposit Monitoring (Binance API)
+### Investment Endpoints
 
-- **Endpoint**: `GET /sapi/v1/capital/deposit/hisrec`
-- **Description**: Retrieves a list of deposit records for the admin account.
-- **Sample Response**:
-  ```json
-  {
-    "depositList": [
-      {
-        "amount": 100,
-        "coin": "USDT",
-        "network": "TRX",
-        "txId": "TransactionID123",
-        "address": "AdminBinanceAddress",
-        "memo": "UserSpecificID",
-        "status": 1,
-        "confirmTimes": "3",
-        "insertTime": 1628506800000,
-        "walletType": 0
-      }
-    ]
-  }
-  ```
+```http
+POST /api/v1/investment/start
+GET /api/v1/investment/status
+GET /api/v1/investment/profits
+```
 
-### Process Flow
+### Withdrawal Endpoints
 
-1. **User Requests Deposit Address**
-   1. User clicks “Deposit” on the platform.
-   2. Platform returns the admin’s Binance address and memo instructions.
-2. **User Makes Deposit**
-   - User sends funds to the admin’s Binance account, including their user ID in the memo field.
-3. **Platform Detects Deposit**
-   - A scheduled task polls Binance API for new deposits.
-   - Matches transactions to users via the memo field.
-4. **Validate and Credit User**
-   - Checks if deposit ≥ minimum (`$10`).
-   - If valid: updates `account_balance`, marks deposit as `completed`, and logs the transaction.
-   - If invalid: marks as `failed` and logs reason.
-5. **Notify User**
-   - Sends notification (email/SMS/in-app) upon success or failure.
+```http
+POST /api/v1/withdraw/request
+GET /api/v1/withdraw/status
+```
 
-### Error Handling
+### Wallet Endpoints
 
-| Error Type           | Action                                                       |
-|----------------------|--------------------------------------------------------------|
-| Invalid Memo Field   | Log as `failed`; notify admin to investigate.               |
-| Below Minimum Amount | Reject deposit; notify user about minimum requirement.      |
-| Binance API Errors   | Retry with exponential backoff; alert on repeated failures. |
+```http
+GET /api/v1/wallet/balances
+POST /api/v1/wallet/transfer
+```
 
-### Security Considerations
+### Referral Endpoints
 
-- **API Key Security**: Limit key permissions to required endpoints; store secrets in environment variables.
-- **Input Validation**: Sanitize and validate all user inputs and API responses.
-- **Rate Limiting**: Implement rate limiting on API endpoints to prevent abuse.
-- **Secure Communication**: Use HTTPS and secure WebSockets if applicable.
+```http
+GET /api/v1/referral/code
+GET /api/v1/referral/earnings
+POST /api/v1/referral/withdraw
+```
+
+## Investment Process Flow
+
+1. **Deposit Process**
+   - User deposits USDT via Binance
+   - System verifies deposit
+   - Amount credited to account wallet
+
+2. **Investment Process**
+   - Transfer from account to trading wallet
+   - Start investment (min $10)
+   - Daily compound interest (0.25%)
+   - Profit available after 7 days
+   - Principal locked for 30 days
+
+3. **Withdrawal Process**
+   - User submits withdrawal request
+   - Admin receives notification
+   - 20-minute verification period
+   - Manual processing by admin
+   - Funds sent to user's Binance address
+
+4. **Referral Process**
+   - User shares referral code
+   - New user registers and deposits
+   - 10% bonus to referrer
+   - Instant withdrawal or reinvestment option
+
+## Security Measures
+
+- **Deposit Validation**
+  - Minimum amount check ($10)
+  - Transaction verification
+  - Duplicate transaction prevention
+
+- **Withdrawal Security**
+  - Admin approval required
+  - Time-lock periods
+  - Address verification
+  - Amount validation
+
+- **System Security**
+  - API key encryption
+  - Rate limiting
+  - Input sanitization
+  - Transaction logging
+
+## Installation & Setup
+
+```bash
+# Install dependencies
+npm install
+
+# Environment setup
+cp .env.example .env
+
+# Database setup
+npm run db:migrate
+
+# Start application
+npm run start
+```
+
+## Environment Variables
+
+```env
+# Binance Configuration
+BINANCE_API_KEY=your_api_key
+BINANCE_API_SECRET=your_api_secret
+ADMIN_BINANCE_ADDRESS=admin_address
+
+# Database Configuration
+DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+
+# Application Settings
+MIN_DEPOSIT=10
+MIN_INVESTMENT=10
+DAILY_INTEREST_RATE=0.0025
+REFERRAL_BONUS_PERCENT=0.10
+
+# Security
+JWT_SECRET=your_jwt_secret
+API_RATE_LIMIT=100
+```
+
+## Admin Dashboard Features
+
+- Deposit monitoring
+- Withdrawal approval interface
+- User management
+- Investment tracking
+- Transaction history
+- Referral statistics
 
 ---
 
-**Maintainers**: Your Name <youremail@example.com>
+## License
+MIT License
 
-**License**: MIT
+## Support
+For technical support, contact support@yourplatform.com
 
