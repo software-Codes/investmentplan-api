@@ -274,6 +274,72 @@ class AdminController {
       next(error);
     }
   }
+
+  //get admin profile
+  static async getAdminProfile(req, res, next) {
+    try {
+      const admin = await Admin.findById(req.admin.adminId);
+      if (!admin) {
+        return res.status(404).json({
+          success: false,
+          message: "Admin not found"
+        });
+      }
+  
+      return res.status(200).json({
+        success: true,
+        admin: {
+          adminId: admin.admin_id,
+          fullName: admin.full_name,
+          email: admin.email,
+          role: admin.role,
+          createdAt: admin.created_at
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+  //get user documents
+  static async getUserDocuments(req, res, next) {
+    try {
+      const { userId } = req.params;
+      const documents = await KYCDocument.findByUserId(userId);
+  
+      return res.status(200).json({
+        success: true,
+        documents: documents.map(doc => ({
+          id: doc.document_id,
+          type: doc.document_type,
+          url: doc.blob_storage_url,
+          uploadedAt: doc.uploaded_at
+        }))
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+  static async updateUserStatus(req, res, next) {
+    try {
+      const { userId, status } = req.body;
+      
+      if (!['active', 'suspended', 'deactivated'].includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid status value"
+        });
+      }
+  
+      await User.updateAccountStatus(userId, status);
+  
+      return res.status(200).json({
+        success: true,
+        message: `User status updated to ${status}`
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = AdminController;

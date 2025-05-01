@@ -5,8 +5,9 @@ const { logger } = require("../utils/logger");
 const { validate } = require("express-validation");
 const { error } = require("../utils/response.util");
 const { addTokenToBlacklist } = require("../helpers/blacklist-auth");
-const smileIDService = require("../services/smile-id-kyc/smile-id.service");
+// const smileIDService = require("../services/smile-id-kyc/smile-id.service");
 const AzureBlobStorageService = require("../services/azure-blob-storage-kyc/azure-blob-storage.service");
+const KYCDocument = require("../models/kyc-document.model")
 /**
  * @file auth.service.js
  * @description Authentication service that integrates User and OTP models for a complete auth flow
@@ -165,15 +166,15 @@ class AuthController {
       );
       return res.status(200).json({
         success: true,
-        user: {
-          userId: user.user_id,
-          fullName: user.full_name,
-          email: user.email,
-          phoneNumber: user.phone_number,
-          preferredContactMethod: user.preferred_contact_method,
-          accountStatus: user.account_status,
-        },
-        accountCompletion,
+        // user: {
+        //   userId: user.user_id,
+        //   fullName: user.full_name,
+        //   email: user.email,
+        //   phoneNumber: user.phone_number,
+        //   preferredContactMethod: user.preferred_contact_method,
+        //   accountStatus: user.account_status,
+        // },
+        // accountCompletion,
         token,
         session: {
           sessionId: session.session_id,
@@ -731,277 +732,109 @@ class AuthController {
       next(error);
     }
   }
-  /**
-   * Handles document upload and verification initialization
-   *
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   * @param {Function} next - Express next middleware function
-   */
- /**
- * Handles document upload and verification initialization
- *
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next middleware function
- */
-static async uploadDocument(req, res, next) {
-  try {
-    if (!req.user || !req.user.userId) {
-      return res.status(401).json({
-        success: false,
-        message: "User authentication required",
-      });
-    }
-
-    if (!req.files) {
-      return res.status(400).json({
-        success: false,
-        message: "Document files are required",
-      });
-    }
-
-    // Check for required files
-    if (!req.files.selfieImage || !req.files.documentImage) {
-      return res.status(400).json({
-        success: false,
-        message: "Both selfie image and document image are required",
-      });
-    }
-
-    // Validate required fields
-    const { documentType, documentNumber, documentCountry } = req.body;
-
-    if (!documentType || !documentNumber || !documentCountry) {
-      return res.status(400).json({
-        success: false,
-        message: "documentType, documentNumber, and documentCountry are required",
-      });
-    }
-
-    // Validate document type
-    const validDocTypes = ["national_id", "drivers_license", "passport"];
-    if (!validDocTypes.includes(documentType)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid document type. Must be one of: ${validDocTypes.join(", ")}`,
-      });
-    }
-
-    // Validate country code (should be ISO country code)
-    if (documentCountry.length !== 2) {
-      return res.status(400).json({
-        success: false,
-        message: "documentCountry must be a valid 2-letter ISO country code",
-      });
-    }
-
-    const { userId } = req.user;
-    const documentData = {
-      documentType,
-      documentNumber,
-      documentCountry,
-    };
-
-    // Log file information for debugging
-    logger.info(`Received selfie image file: ${req.files.selfieImage[0].originalname}, size: ${req.files.selfieImage[0].size} bytes`);
-    logger.info(`Received document image file: ${req.files.documentImage[0].originalname}, size: ${req.files.documentImage[0].size} bytes`);
-    
-    // Access the file buffers
-    const selfieBuffer = req.files.selfieImage[0].buffer;
-    const documentBuffer = req.files.documentImage[0].buffer;
-    
-    // Optional document back image
-    let documentBackBuffer = null;
-    if (req.files.documentBackImage && req.files.documentBackImage[0]) {
-      logger.info(`Received document back image file: ${req.files.documentBackImage[0].originalname}, size: ${req.files.documentBackImage[0].size} bytes`);
-      documentBackBuffer = req.files.documentBackImage[0].buffer;
-    }
-
-    const fileName = req.files.documentImage[0].originalname;
-    const contentType = req.files.documentImage[0].mimetype;
-
-    const document = await User.submitKycDocument(
-      userId,
-      documentData,
-      selfieBuffer,
-      documentBuffer,
-      documentBackBuffer,
-      fileName,
-      contentType
-    );
-
-    logger.info(`Document uploaded successfully for user ${userId}`);
-
-    return res.status(200).json({
-      success: true,
-      message: "Document submitted successfully for verification",
-      document: {
-        documentId: document.document_id,
-        documentType: document.document_type,
-        verificationStatus: document.verification_status,
-        uploadedAt: document.uploaded_at,
-      },
-    });
-  } catch (error) {
-    logger.error(`Document upload failed: ${error.message}`, { error });
-
-    return res.status(500).json({
-      success: false,
-      message: `Could not process document upload: ${error.message}`,
-    });
-  }
-}
-
-  /**
-   * Gets the verification status of a document
-   *
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   */
-  static async getDocumentStatus(req, res) {
+  // In auth.controller.js add these methods
+  static async uploadDocument(req, res, next) {
     try {
-      const { userId } = req.user;
-      const { documentId } = req.params;
-
-      if (!documentId) {
+      const { user } = req;
+      
+      if (!req.file) {
         return res.status(400).json({
           success: false,
-          message: "Document ID is required",
+          message: 'Document file is required',
+          acceptedTypes: ['image/jpeg', 'image/png', 'application/pdf'],
+          maxSize: '5MB'
         });
       }
-      const document = await User.checkDocumentVerificationStatus(
-        userId,
-        documentId
-      );
-      return res.status(200).json({
+  
+      const documentFile = req.file;
+      
+      // Initialize Azure service
+      const azureService = new AzureBlobStorageService({
+        accountName: process.env.AZURE_STORAGE_ACCOUNT,
+        accountKey: process.env.AZURE_STORAGE_KEY,
+        containerName: process.env.AZURE_KYC_CONTAINER
+      });
+  
+      // Upload document to Azure
+      const uploadResult = await azureService.uploadDocument({
+        userId: user.userId,
+        documentType: req.body.documentType,
+        fileBuffer: documentFile.buffer,
+        fileName: documentFile.originalname,
+        contentType: documentFile.mimetype
+      });
+  
+      // Save document record to database
+      const docRecord = await KYCDocument.create({
+        userId: user.userId,
+        documentType: req.body.documentType,
+        documentCountry: req.body.documentCountry,
+        ...uploadResult,
+        fileSize: documentFile.size,
+        fileType: documentFile.mimetype
+      });
+  
+      // Mark account as active immediately after document upload
+      await User.updateAccountStatus(user.userId, 'active');
+  
+      res.status(201).json({
         success: true,
-        message: "Document status retrieved successfully",
+        message: 'Document uploaded successfully. Your account is now active.',
         document: {
-          documentId: document.document_id,
-          documentType: document.document_type,
-          verificationStatus: document.verification_status,
-          uploadedAt: document.uploaded_at,
+          id: docRecord.document_id,
+          type: docRecord.document_type,
+          url: docRecord.blob_storage_url
+        }
+      });
+  
+    } catch (error) {
+      logger.error(`Document upload failed: ${error.message}`);
+      next(error);
+    }
+  }
+  static async getDocumentStatus(req, res, next) {
+    try {
+      const KYCDocument = require("../models/kyc-document.model");
+      const document = await KYCDocument.findById(req.params.documentId);
+
+      if (!document) {
+        return res.status(404).json({
+          success: false,
+          message: "Document not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        document: {
+          status: document.verification_status,
+          type: document.document_type,
           verifiedAt: document.verified_at,
-          verificationNotes: document.verification_notes,
+          notes: document.verification_notes,
         },
       });
     } catch (error) {
-      logger.error(`Failed to get document status: ${error.message}`, {
-        error,
-      });
-
-      return res.status(500).json({
-        success: false,
-        message: `Could not retrieve document status: ${error.message}`,
-      });
+      next(error);
     }
   }
-  /**
-   * Gets all documents for a user
-   *
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   */
-  static async getUserDocuments(req, res) {
+
+  static async getUserDocuments(req, res, next) {
     try {
-      const { userId } = req.user;
-      const documents = await User.getUserDocuments(userId);
-      return res.status(200).json({
+      const KYCDocument = require("../models/kyc-document.model");
+      const documents = await KYCDocument.findByUserId(req.user.userId);
+
+      res.json({
         success: true,
-        message: "User documents retrieved successfully",
         documents: documents.map((doc) => ({
-          documentId: doc.document_id,
-          documentType: doc.document_type,
-          documentNumber: doc.document_number,
-          documentCountry: doc.document_country,
-          verificationStatus: doc.verification_status,
+          id: doc.document_id,
+          type: doc.document_type,
+          status: doc.verification_status,
           uploadedAt: doc.uploaded_at,
           verifiedAt: doc.verified_at,
         })),
       });
     } catch (error) {
-      logger.error(`Failed to get user documents: ${error.message}`, { error });
-
-      return res.status(500).json({
-        success: false,
-        message: `Could not retrieve user documents: ${error.message}`,
-      });
-    }
-  }
-
-  /**
-   * Handle verification callback from Smile ID
-   *
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   */
-  static async handleVerificationCallback(req, res) {
-    try {
-      const callbackData = req.body;
-      logger.info("Received verification callback from Smile ID", {
-        jobId: callbackData.job_id,
-        userId: callbackData.user_id,
-      });
-
-      // Find the document with this verification reference
-      const docResult = await query(
-        `SELECT document_id, user_id FROM kyc_documents WHERE verification_reference = $1`,
-        [callbackData.job_id]
-      );
-
-      if (docResult.rows.length === 0) {
-        logger.warn(
-          `No document found for verification job: ${callbackData.job_id}`
-        );
-        return res.status(404).json({ message: "Document not found" });
-      }
-
-      const document = docResult.rows[0];
-
-      // Update document status based on callback result
-      let newStatus = "pending";
-      let verificationNotes = null;
-
-      if (callbackData.ResultCode === "1012") {
-        newStatus = "verified";
-      } else if (["1013", "1014", "1015"].includes(callbackData.ResultCode)) {
-        newStatus = "rejected";
-        verificationNotes = callbackData.ResultText || "Verification failed";
-      }
-
-      // Update document status
-      const currentDate = new Date().toISOString();
-      const verifiedAt = newStatus === "verified" ? currentDate : null;
-
-      await query(
-        `UPDATE kyc_documents SET 
-         verification_status = $1,
-         verification_notes = $2,
-         verified_at = $3,
-         updated_at = $4
-         WHERE document_id = $5`,
-        [
-          newStatus,
-          verificationNotes,
-          verifiedAt,
-          currentDate,
-          document.document_id,
-        ]
-      );
-
-      logger.info(
-        `Updated document status to ${newStatus} via callback for job ${callbackData.job_id}`
-      );
-
-      return res
-        .status(200)
-        .json({ message: "Callback processed successfully" });
-    } catch (error) {
-      logger.error(`Error processing verification callback: ${error.message}`, {
-        error,
-      });
-      return res.status(500).json({ message: "Error processing callback" });
+      next(error);
     }
   }
 }

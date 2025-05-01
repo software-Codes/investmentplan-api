@@ -119,13 +119,25 @@ const adminController = require("../../controllers/admin/admin.controller");
 const {
   adminAuthenticate,
 } = require("../../middleware/admin/adminAuth.middleware");
+const {superAdminOnly} = require("../../middleware/admin/super-admin.middleware")
 
 // Admin login route
 router.post("/login", adminController.adminLogin);
 
-// Admin registration route (protected)
-router.post("/register", adminAuthenticate, adminController.registerAdmin);
-
+router.post("/register", 
+  adminAuthenticate, 
+  // Add a super-admin check middleware
+  (req, res, next) => {
+    if (req.admin.role !== 'super-admin') {
+      return res.status(403).json({
+        success: false,
+        message: "Only super admins can register new admins"
+      });
+    }
+    next();
+  },
+  adminController.registerAdmin
+);
 // Middleware to authenticate admin routes
 router.use(adminAuthenticate);
 
@@ -157,4 +169,36 @@ router.get("/user-details/:userId", adminController.getUserDetails);
  */
 router.get("/all-users", adminController.getAllUsers);
 
+// Update user status
+router.post("/update-user-status", adminAuthenticate, adminController.updateUserStatus);
+// Get user documents
+router.get("/user-documents/:userId", adminAuthenticate, adminController.getUserDocuments);
+
+// Get admin profile
+router.get("/profile", adminAuthenticate, adminController.getAdminProfile);
+router.post("/create-admin", 
+  adminAuthenticate, 
+  superAdminOnly,
+  adminController.registerAdmin
+);
+
+router.get("/admin-list", 
+  adminAuthenticate, 
+  superAdminOnly,
+  // adminController.getAllAdmins
+);
+
+router.post("/revoke-admin", 
+  adminAuthenticate, 
+  superAdminOnly,
+  // adminController.revokeAdmin
+);
+router.post("/create-super-admin", 
+  adminAuthenticate, 
+  superAdminOnly,
+  // adminController.createSuperAdmin
+);
+
 module.exports = router;
+
+

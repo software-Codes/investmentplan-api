@@ -85,31 +85,38 @@ async function createTables() {
           updated_at TIMESTAMP WITH TIME ZONE NOT NULL
       );
     `);
+// Add this to your createTables function
 
-    await query(`
- CREATE TABLE IF NOT EXISTS kyc_documents (
-    document_id UUID PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    document_type document_type_enum NOT NULL,
-    document_number VARCHAR(100),
-    document_country VARCHAR(100),
-    blob_storage_path VARCHAR(255) NOT NULL,
-    blob_storage_url VARCHAR(255),
-    file_name VARCHAR(255),
-    original_file_name VARCHAR(255),
-    file_size INTEGER,
-    file_type VARCHAR(100),
-    verification_status verification_status_enum NOT NULL DEFAULT 'pending',
-    verification_method VARCHAR(50),
-    verification_reference VARCHAR(100),
-    verification_notes TEXT,
-    verification_confidence DECIMAL(5,2),
-    uploaded_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    verified_at TIMESTAMP WITH TIME ZONE,
-    expires_at TIMESTAMP WITH TIME ZONE,
+await query(`
+  CREATE TABLE IF NOT EXISTS admins (
+    admin_id UUID PRIMARY KEY,
+    full_name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'admin',
+    is_super_admin BOOLEAN DEFAULT FALSE,
+    last_login_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL
-);
+  );
+`);
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS kyc_documents (
+        document_id UUID PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        document_type VARCHAR(50) NOT NULL,
+        document_country VARCHAR(100),
+        blob_storage_path VARCHAR(255) NOT NULL,
+        blob_storage_url VARCHAR(255),
+        file_name VARCHAR(255),
+        original_file_name VARCHAR(255),
+        file_size INTEGER,
+        file_type VARCHAR(100),
+        uploaded_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+      );
     `);
 
     await query(`

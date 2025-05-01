@@ -7,8 +7,8 @@
 const { pool, query } = require("../Config/neon-database");
 const { v4: uuidv4 } = require("uuid");
 const bcrypt = require("bcrypt");
-const AzureBlobStorageService = require("../services/azure-blob-storage-kyc/azure-blob-storage.service");
-const SmileIDService = require("../services/smile-id-kyc/smile-id.service");
+// const AzureBlobStorageService = require("../services/azure-blob-storage-kyc/azure-blob-storage.service");
+// const SmileIDService = require("../services/smile-id-kyc/smile-id.service");
 const { logger } = require("../utils/logger");
 /**
  * User model - Handles all user-related database operations
@@ -488,339 +488,7 @@ class User {
     const res = await query(queryText, [userId]);
     return res.rows[0] || null;
   }
-  /**
-   * Submits KYC documents for verification and storage
-   *
-   * @param {string} userId - The unique ID of the user
-   * @param {Object} documentData - Document metadata
-   * @param {string} documentData.documentType - Document type (national_id, passport, drivers_license)
-   * @param {string} documentData.documentNumber - Document number/ID
-   * @param {string} documentData.documentCountry - ISO country code
-   * @param {Buffer} selfieBuffer - The selfie image as a buffer
-   * @param {Buffer} documentBuffer - The document front image as a buffer
-   * @param {Buffer} documentBackBuffer - The document back image as a buffer (optional)
-   * @param {string} fileName - Original file name
-   * @param {string} contentType - File MIME type
-   * @returns {Promise<Object>} Submitted document data
-   */
-  static async submitKycDocument(
-    userId,
-    documentData,
-    selfieBuffer,
-    documentBuffer,
-    documentBackBuffer = null,
-    fileName,
-    contentType
-  ) {
-    logger.info(`Processing KYC document submission for user: ${userId}`);
 
-    try {
-      // Validate input parameters
-      if (!userId || !documentData || !documentBuffer || !selfieBuffer) {
-        throw new Error("Missing required parameters for document submission");
-      }
-
-      // Validate document type against enum values
-      const validDocTypes = ["national_id", "drivers_license", "passport"];
-      if (!validDocTypes.includes(documentData.documentType)) {
-        throw new Error(
-          `Invalid document type. Must be one of: ${validDocTypes.join(", ")}`
-        );
-      }
-
-      // Initialize services with environment variables
-      const smileIDService = new SmileIDService({
-        apiKey: process.env.SMILE_ID_API_KEY,
-        partnerId: process.env.SMILE_ID_PARTNER_ID,
-        callbackUrl: process.env.SMILE_ID_CALLBACK_URL,
-        environment: process.env.SMILE_ID_ENVIRONMENT || "test",
-      });
-
-      const blobStorage = new AzureBlobStorageService({
-        accountName: process.env.AZURE_STORAGE_ACCOUNT_NAME,
-        accountKey: process.env.AZURE_STORAGE_ACCOUNT_KEY,
-        containerName: process.env.AZURE_KYC_CONTAINER_NAME || "kyc-documents",
-      });
-
-      // 1. Upload document to Azure Blob Storage
-      const uploadResult = await blobStorage.uploadDocument({
-        userId,
-        documentType: documentData.documentType,
-        fileBuffer: documentBuffer,
-        fileName,
-        contentType,
-      });
-
-      logger.info(
-        `Document uploaded successfully to blob storage: ${uploadResult.blobStoragePath}`
-      );
-
-      // 2. Submit document to Smile ID for verification
-      const smileDocumentType = this._mapToSmileIDDocumentType(
-        documentData.documentType
-      );
-
-      // Verify that documentData.documentNumber is properly set
-      if (
-        !documentData.documentNumber ||
-        documentData.documentNumber.trim() === ""
-      ) {
-        throw new Error("Document number is required for verification");
-      }
-
-      // Prepare verification data
-      const verificationData = {
-        userId,
-        countryCode: documentData.documentCountry,
-        documentType: smileDocumentType,
-        documentNumber: documentData.documentNumber,
-        selfieImage: selfieBuffer, // Add selfie image
-        documentImage: documentBuffer, // Front of ID
-        documentBackImage: documentBackBuffer, // Back of ID (optional)
-      };
-
-      logger.info(
-        `Verification data: ${JSON.stringify({
-          userId: verificationData.userId,
-          countryCode: verificationData.countryCode,
-          documentType: verificationData.documentType,
-          documentNumber: verificationData.documentNumber,
-        })}`
-      );
-
-      const verificationResponse = await smileIDService.verifyDocument(
-        verificationData
-      );
-
-      if (!verificationResponse || !verificationResponse.job_id) {
-        throw new Error("Invalid verification response from Smile ID");
-      }
-
-      logger.info(
-        `Document verification initiated with Smile ID, job ID: ${verificationResponse.job_id}`
-      );
-
-      // 3. Store document details in database
-      const documentId = uuidv4();
-      const currentDate = new Date().toISOString();
-
-      // Check if user already has a document of this type
-      const existingDoc = await query(
-        `SELECT document_id FROM kyc_documents 
-       WHERE user_id = $1 AND document_type = $2 
-       LIMIT 1`,
-        [userId, documentData.documentType]
-      );
-
-      let result;
-
-      if (existingDoc.rows.length > 0) {
-        // Update existing document
-        const updateQuery = `
-        UPDATE kyc_documents SET
-          document_number = $1,
-          document_country = $2,
-          blob_storage_path = $3,
-          blob_storage_url = $4,
-          verification_status = $5,
-          verification_reference = $6,
-          verification_method = $7,
-          uploaded_at = $8,
-          updated_at = $9
-        WHERE user_id = $10 AND document_type = $11
-        RETURNING *;
-      `;
-
-        const updateValues = [
-          documentData.documentNumber,
-          documentData.documentCountry,
-          uploadResult.blobStoragePath,
-          uploadResult.blobStorageUrl,
-          "pending",
-          verificationResponse.job_id,
-          "smile_id",
-          currentDate,
-          currentDate,
-          userId,
-          documentData.documentType,
-        ];
-
-        result = await query(updateQuery, updateValues);
-        logger.info(`Updated existing KYC document record for user ${userId}`);
-      } else {
-        // Insert new document
-        const insertQuery = `
-        INSERT INTO kyc_documents (
-          document_id,
-          user_id,
-          document_type,
-          document_number,
-          document_country,
-          blob_storage_path,
-          blob_storage_url,
-          verification_status,
-          verification_reference,
-          verification_method,
-          uploaded_at,
-          created_at,
-          updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-        RETURNING *;
-      `;
-
-        const insertValues = [
-          documentId,
-          userId,
-          documentData.documentType,
-          documentData.documentNumber,
-          documentData.documentCountry,
-          uploadResult.blobStoragePath,
-          uploadResult.blobStorageUrl,
-          "pending",
-          verificationResponse.job_id,
-          "smile_id",
-          currentDate,
-          currentDate,
-          currentDate,
-        ];
-
-        result = await query(insertQuery, insertValues);
-        logger.info(`Created new KYC document record for user ${userId}`);
-      }
-
-      // Return the document data
-      return result.rows[0];
-    } catch (error) {
-      logger.error(`Failed to submit KYC document: ${error.message}`, {
-        error,
-      });
-      throw new Error(`Document submission failed: ${error.message}`);
-    }
-  }
-
-  /**
-   * Checks the verification status of a KYC document
-   *
-   * @param {string} userId - User ID
-   * @param {string} documentId - Document ID
-   * @returns {Promise<Object>} - Document with updated verification status
-   */
-  static async checkDocumentVerificationStatus(userId, documentId) {
-    try {
-      // Get document details from database
-      const docResult = await query(
-        `SELECT * FROM kyc_documents WHERE document_id = $1 AND user_id = $2`,
-        [documentId, userId]
-      );
-
-      if (docResult.rows.length === 0) {
-        throw new Error("Document not found");
-      }
-
-      const document = docResult.rows[0];
-
-      // Skip verification check if already verified or rejected
-      if (["verified", "rejected"].includes(document.verification_status)) {
-        return document;
-      }
-
-      // Initialize Smile ID service
-      const smileIDService = new SmileIDService({
-        apiKey: process.env.SMILE_ID_API_KEY,
-        partnerId: process.env.SMILE_ID_PARTNER_ID,
-        environment: process.env.SMILE_ID_ENVIRONMENT || "test",
-      });
-
-      // Check verification status
-      const verificationResult = await smileIDService.getVerificationStatus(
-        userId,
-        document.verification_reference
-      );
-
-      // Map Smile ID status to our status
-      let newStatus = "pending";
-      let verificationNotes = null;
-
-      if (verificationResult.ResultCode === "1012") {
-        newStatus = "verified";
-      } else if (
-        ["1013", "1014", "1015"].includes(verificationResult.ResultCode)
-      ) {
-        newStatus = "rejected";
-        verificationNotes =
-          verificationResult.ResultText || "Verification failed";
-      }
-
-      // Update document status in database
-      const updateQuery = `
-        UPDATE kyc_documents SET
-          verification_status = $1,
-          verification_notes = $2,
-          verified_at = $3,
-          updated_at = $4
-        WHERE document_id = $5
-        RETURNING *;
-      `;
-
-      const currentDate = new Date().toISOString();
-      const verifiedAt = newStatus === "verified" ? currentDate : null;
-
-      const updateResult = await query(updateQuery, [
-        newStatus,
-        verificationNotes,
-        verifiedAt,
-        currentDate,
-        documentId,
-      ]);
-
-      logger.info(
-        `Updated document verification status to ${newStatus} for document ${documentId}`
-      );
-
-      return updateResult.rows[0];
-    } catch (error) {
-      logger.error(
-        `Failed to check document verification status: ${error.message}`,
-        { error }
-      );
-      throw new Error(`Verification status check failed: ${error.message}`);
-    }
-  }
-
-  /**
-   * Get all KYC documents for a user
-   *
-   * @param {string} userId - User ID
-   * @returns {Promise<Array>} - User's documents
-   */
-  static async getUserDocuments(userId) {
-    try {
-      const result = await query(
-        `SELECT * FROM kyc_documents WHERE user_id = $1 ORDER BY updated_at DESC`,
-        [userId]
-      );
-      return result.rows;
-    } catch (error) {
-      logger.error(`Failed to get user documents: ${error.message}`, { error });
-      throw new Error(`Could not retrieve user documents: ${error.message}`);
-    }
-  }
-
-  /**
-   * Maps application document types to Smile ID document types
-   *
-   * @param {string} documentType - Application document type
-   * @returns {string} - Smile ID document type
-   */
-  static _mapToSmileIDDocumentType(documentType) {
-    const mapping = {
-      national_id: "NATIONAL_ID",
-      passport: "PASSPORT",
-      drivers_license: "DRIVERS_LICENSE",
-    };
-
-    return mapping[documentType] || documentType.toUpperCase();
-  }
   /**
    * Initiates the account recovery process for a user
    * @param {Object} recoveryData - Data for account recovery
@@ -1126,88 +794,38 @@ class User {
    * @param {string} userId - User's unique ID
    * @returns {Promise<Object>} Account completion details
    */
+ // In user.model.js
+static async getAccountCompletionStatus(userId) {
+  try {
+    const user = await this.findById(userId);
+    if (!user) throw new Error("User not found");
 
-  static async getAccountCompletionStatus(userId) {
-    try {
-      //first get the users basic information
-      const userQuery = `
-      SELECT 
-         email_verified,
-         phone_verified,
-         account_status
-      FROM users
-      WHERE user_id = $1
-         
-      `;
-      const userResult = await query(userQuery, [userId]);
-      if (userResult.rows.length === 0) {
-        throw new Error("User not found");
-      }
-      const user = userResult.rows[0];
-
-      // Query KYC documents with detailed status
-      const kycQuery = `
-      SELECT 
-          document_type, 
-          verification_status,
-          CASE 
-              WHEN verification_status = 'verified' THEN true
-              ELSE false
-          END as is_verified
-      FROM kyc_documents
-      WHERE user_id = $1;
-  `;
-      const kycResult = await query(kycQuery, [userId]);
-      // Check required document types
-      const requiredDocTypes = ["national_id", "passport", "drivers_license"];
-      const submittedDocTypes = kycResult.rows.map((doc) => doc.document_type);
-      // Check which required docs are missing
-      const missingDocTypes = requiredDocTypes.filter(
-        (docType) => !submittedDocTypes.includes(docType)
-      );
-      // Check if at least one document is verified
-      const hasVerifiedDoc = kycResult.rows.some((doc) => doc.is_verified);
-      // Calculate overall status
-      const isContactVerified = user.email_verified || user.phone_verified;
-      const hasSubmittedDocs = kycResult.rows.length > 0;
-      // Calculate completion percentage (25% for contact verification, 75% for documents)
-      let completionPercentage = 0;
-      if (isContactVerified) completionPercentage += 25;
-      if (hasSubmittedDocs) {
-        // Add up to 75% based on document count and verification
-        const maxDocsNeeded = 1; // Only requiring one valid document
-        const docsSubmittedPercentage =
-          (Math.min(kycResult.rows.length, maxDocsNeeded) / maxDocsNeeded) * 50;
-        completionPercentage += docsSubmittedPercentage;
-
-        if (hasVerifiedDoc) completionPercentage += 25;
-      }
-      return {
-        isVerified: isContactVerified,
-        accountStatus: user.account_status,
-        kycStatus: {
-          hasSubmittedDocuments: hasSubmittedDocs,
-          hasVerifiedDocuments: hasVerifiedDoc,
-          submittedDocuments: kycResult.rows.map((doc) => ({
-            type: doc.document_type,
-            status: doc.verification_status,
-          })),
-          missingDocumentTypes: missingDocTypes,
-          requiresAtLeastOneDocument:
-            missingDocTypes.length === requiredDocTypes.length,
-        },
-        completionPercentage: Math.round(completionPercentage),
-        isComplete:
-          isContactVerified &&
-          hasVerifiedDoc &&
-          user.account_status === "active",
-      };
-    } catch (error) {
-      throw new Error(
-        `Failed to get account completion status: ${error.message}`
-      );
-    }
+    const KYCDocument = require("./kyc-document.model");
+    const kycDocs = await KYCDocument.findByUserId(userId);
+    
+    // Get distinct document types
+    const submittedTypes = [...new Set(kycDocs.map(doc => doc.document_type))];
+    
+    // Required document types
+    const requiredDocs = ['national_id', 'passport', 'drivers_license'];
+    
+    // Check completion
+    const hasAllDocuments = requiredDocs.every(type => submittedTypes.includes(type));
+    
+    return {
+      basicVerified: user.email_verified || user.phone_verified,
+      documentsSubmitted: kycDocs.length > 0,
+      accountComplete: hasAllDocuments,
+      requiredDocuments: requiredDocs,
+      submittedDocuments: submittedTypes,
+      completionPercentage: hasAllDocuments ? 100 : 
+        Math.floor((submittedTypes.length / requiredDocs.length) * 100)
+    };
+  } catch (error) {
+    logger.error(`Account completion check failed: ${error.message}`);
+    throw new Error('Failed to check account status');
   }
+}
   /**
    * Initiates the password reset process by generating a new OTP.
    * @param {string} userId - The user's unique ID.
