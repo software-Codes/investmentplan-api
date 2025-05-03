@@ -42,19 +42,19 @@ trap 'handle_error $LINENO "$BASH_COMMAND"' ERR
 
 # Configuration and Initialization
 initialize_configuration() {
-    # Traverse up the directory tree to find globalenv.config
+    # Traverse up the directory tree to find globalenvdev.config
     local dir
     dir=$(pwd)
     while [[ "$dir" != "/" ]]; do
-        if [[ -f "$dir/globalenv.config" ]]; then
+        if [[ -f "$dir/globalenvdev.config" ]]; then
             # shellcheck source=/dev/null
-            source "$dir/globalenv.config"
+            source "$dir/globalenvdev.config"
             return 0
         fi
         dir=$(dirname "$dir")
     done
 
-    log_error "globalenv.config not found"
+    log_error "globalenvdev.config not found"
     exit 1
 }
 
@@ -148,8 +148,8 @@ deploy_container_app() {
     local environment_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-BackendContainerAppsEnv"
     local container_app_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-worker"
     local registry_url="${ENVIRONMENT_PREFIX}${PROJECT_PREFIX}contregistry.azurecr.io"
-    local repo_url="https://github.com/investment-project/infrah-api-investment"
-    local branch="authentication"
+    local repo_url="https://github.com/software-Codes/investmentplan-api"
+    local branch="main"
 
     log_info "Deploying Container App: $container_app_name"
 
@@ -162,7 +162,7 @@ deploy_container_app() {
         --branch "$branch" \
         --registry-server "$registry_url" \
         --ingress external \
-        --target-port 8000
+        --target-port 3000
 
 
     # Update container app settings
@@ -173,7 +173,8 @@ deploy_container_app() {
         --cpu 0.25 \
         --memory 0.5Gi \
         --min-replicas 1 \
-        --max-replicas 10
+        --max-replicas 10 \
+
 
     # Optional: Disable public ingress if internal service
     # az containerapp ingress disable \
