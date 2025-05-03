@@ -46,15 +46,15 @@ initialize_configuration() {
     local dir
     dir=$(pwd)
     while [[ "$dir" != "/" ]]; do
-        if [[ -f "$dir/globalenvdev.config" ]]; then
+        if [[ -f "$dir/globalenv.config" ]]; then
             # shellcheck source=/dev/null
-            source "$dir/globalenvdev.config"
+            source "$dir/globalenv.config"
             return 0
         fi
         dir=$(dirname "$dir")
     done
 
-    log_error "globalenvdev.config not found"
+    log_error "globalenv.config not found"
     exit 1
 }
 
