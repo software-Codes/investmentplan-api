@@ -25,6 +25,11 @@ const CURRENCY = {
   DEFAULT: "USDT",
   NETWORK: "TRC20",
 };
+const REFERRAL = {
+  BONUS_PERCENTAGE: 0.10, // 10%
+  CODE_LENGTH: 8,
+  MINIMUM_WITHDRAWAL: 10
+};
 
 module.exports = {
   WALLET_TYPES,
@@ -32,4 +37,5 @@ module.exports = {
   TRANSACTION_TYPES,
   LIMITS,
   CURRENCY,
+  REFERRAL,
 };

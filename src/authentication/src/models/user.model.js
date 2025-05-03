@@ -10,6 +10,8 @@ const bcrypt = require("bcrypt");
 // const AzureBlobStorageService = require("../services/azure-blob-storage-kyc/azure-blob-storage.service");
 // const SmileIDService = require("../services/smile-id-kyc/smile-id.service");
 const { logger } = require("../utils/logger");
+const Wallet = require("../../Investment/src/models/wallet/wallet.models");
+
 /**
  * User model - Handles all user-related database operations
  */
@@ -27,67 +29,78 @@ class User {
    */
 
   static async create(userData) {
-    const userId = uuidv4();
-    const currentDate = new Date().toISOString();
-
-    // Hash the user password
-    const saltRounds = 10;
-    const passwordHash = await bcrypt.hash(userData.password, saltRounds);
-
-    const queryText = `
-    INSERT INTO users (
-      user_id, 
-      full_name, 
-      email, 
-      phone_number, 
-      password_hash, 
-      preferred_contact_method, 
-      email_verified, 
-      phone_verified, 
-      account_status, 
-      failed_login_attempts, 
-      created_at, 
-      updated_at
-    ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
-    ) RETURNING 
-      user_id, 
-      full_name, 
-      email, 
-      phone_number, 
-      preferred_contact_method, 
-      email_verified, 
-      phone_verified, 
-      account_status, 
-      created_at;
-  `;
-    const values = [
-      userId,
-      userData.fullName,
-      userData.email.toLowerCase(),
-      userData.phoneNumber,
-      passwordHash,
-      userData.preferredContactMethod || "email", // Ensure "phone_number" is accepted
-      false, // email_verified
-      false, // phone_verified
-      "pending", // account_status
-      0, // failed_login_attempts
-      currentDate,
-      currentDate,
-    ];
+    const client = await pool.connect();
     try {
-      const res = await query(queryText, values);
+      await client.query("BEGIN");
+
+      const userId = uuidv4();
+      const currentDate = new Date().toISOString();
+      const saltRounds = 10;
+      const passwordHash = await bcrypt.hash(userData.password, saltRounds);
+      const queryText = `
+      INSERT INTO users (
+        user_id, 
+        full_name, 
+        email, 
+        phone_number, 
+        password_hash, 
+        preferred_contact_method, 
+        email_verified, 
+        phone_verified, 
+        account_status, 
+        failed_login_attempts, 
+        created_at, 
+        updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+      ) RETURNING 
+        user_id, 
+        full_name, 
+        email, 
+        phone_number, 
+        preferred_contact_method, 
+        email_verified, 
+        phone_verified, 
+        account_status, 
+        created_at;
+    `;
+      const values = [
+        userId,
+        userData.fullName,
+        userData.email.toLowerCase(),
+        userData.phoneNumber,
+        passwordHash,
+        userData.preferredContactMethod || "email",
+        false,
+        false,
+        "pending",
+        0,
+        currentDate,
+        currentDate,
+      ];
+      const res = await client.query(queryText, values);
+      // Create wallets for the new user
+      await Wallet.createUserWallets(userId);
+      await client.query("COMMIT");
+      logger.info(
+        `Created new user with ID: ${userId} and initialized wallets`
+      );
       return res.rows[0];
     } catch (error) {
+      await client.query("ROLLBACK");
+
       if (error.code === "23505") {
-        // Unique violation
         if (error.detail.includes("email")) {
           throw new Error("Email address already registered");
         } else if (error.detail.includes("phone_number")) {
           throw new Error("Phone number already registered");
         }
       }
+
+      logger.error(`Failed to create user: ${error.message}`);
       throw new Error(`Failed to create the user: ${error.message}`);
+    } finally {
+      client.release();
     }
   }
   /**
@@ -794,38 +807,43 @@ class User {
    * @param {string} userId - User's unique ID
    * @returns {Promise<Object>} Account completion details
    */
- // In user.model.js
-static async getAccountCompletionStatus(userId) {
-  try {
-    const user = await this.findById(userId);
-    if (!user) throw new Error("User not found");
+  // In user.model.js
+  static async getAccountCompletionStatus(userId) {
+    try {
+      const user = await this.findById(userId);
+      if (!user) throw new Error("User not found");
 
-    const KYCDocument = require("./kyc-document.model");
-    const kycDocs = await KYCDocument.findByUserId(userId);
-    
-    // Get distinct document types
-    const submittedTypes = [...new Set(kycDocs.map(doc => doc.document_type))];
-    
-    // Required document types
-    const requiredDocs = ['national_id', 'passport', 'drivers_license'];
-    
-    // Check completion
-    const hasAllDocuments = requiredDocs.every(type => submittedTypes.includes(type));
-    
-    return {
-      basicVerified: user.email_verified || user.phone_verified,
-      documentsSubmitted: kycDocs.length > 0,
-      accountComplete: hasAllDocuments,
-      requiredDocuments: requiredDocs,
-      submittedDocuments: submittedTypes,
-      completionPercentage: hasAllDocuments ? 100 : 
-        Math.floor((submittedTypes.length / requiredDocs.length) * 100)
-    };
-  } catch (error) {
-    logger.error(`Account completion check failed: ${error.message}`);
-    throw new Error('Failed to check account status');
+      const KYCDocument = require("./kyc-document.model");
+      const kycDocs = await KYCDocument.findByUserId(userId);
+
+      // Get distinct document types
+      const submittedTypes = [
+        ...new Set(kycDocs.map((doc) => doc.document_type)),
+      ];
+
+      // Required document types
+      const requiredDocs = ["national_id", "passport", "drivers_license"];
+
+      // Check completion
+      const hasAllDocuments = requiredDocs.every((type) =>
+        submittedTypes.includes(type)
+      );
+
+      return {
+        basicVerified: user.email_verified || user.phone_verified,
+        documentsSubmitted: kycDocs.length > 0,
+        accountComplete: hasAllDocuments,
+        requiredDocuments: requiredDocs,
+        submittedDocuments: submittedTypes,
+        completionPercentage: hasAllDocuments
+          ? 100
+          : Math.floor((submittedTypes.length / requiredDocs.length) * 100),
+      };
+    } catch (error) {
+      logger.error(`Account completion check failed: ${error.message}`);
+      throw new Error("Failed to check account status");
+    }
   }
-}
   /**
    * Initiates the password reset process by generating a new OTP.
    * @param {string} userId - The user's unique ID.
