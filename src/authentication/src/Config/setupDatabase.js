@@ -101,23 +101,24 @@ async function createTables() {
   );
 `);
 
-    await query(`
-      CREATE TABLE IF NOT EXISTS kyc_documents (
-        document_id UUID PRIMARY KEY,
-        user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-        document_type VARCHAR(50) NOT NULL,
-        document_country VARCHAR(100),
-        blob_storage_path VARCHAR(255) NOT NULL,
-        blob_storage_url VARCHAR(255),
-        file_name VARCHAR(255),
-        original_file_name VARCHAR(255),
-        file_size INTEGER,
-        file_type VARCHAR(100),
-        uploaded_at TIMESTAMP WITH TIME ZONE NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-        updated_at TIMESTAMP WITH TIME ZONE NOT NULL
-      );
-    `);
+await query(`
+  CREATE TABLE IF NOT EXISTS kyc_documents (
+    document_id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    document_type VARCHAR(50) NOT NULL,
+    document_country VARCHAR(100),
+    verification_reference VARCHAR(255),
+    blob_storage_path VARCHAR(255) NOT NULL,
+    blob_storage_url VARCHAR(255),
+    file_name VARCHAR(255),
+    original_file_name VARCHAR(255),
+    file_size INTEGER,
+    file_type VARCHAR(100),
+    uploaded_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+  );
+`);
 
     await query(`
       CREATE TABLE IF NOT EXISTS otp_records (
