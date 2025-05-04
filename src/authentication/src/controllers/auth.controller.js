@@ -7,7 +7,9 @@ const { error } = require("../utils/response.util");
 const { addTokenToBlacklist } = require("../helpers/blacklist-auth");
 // const smileIDService = require("../services/smile-id-kyc/smile-id.service");
 const AzureBlobStorageService = require("../services/azure-blob-storage-kyc/azure-blob-storage.service");
-const KYCDocument = require("../models/kyc-document.model")
+const KYCDocument = require("../models/kyc-document.model");
+const Wallet = require("../../../Investment/src/models/wallets/wallets.models");
+
 /**
  * @file auth.service.js
  * @description Authentication service that integrates User and OTP models for a complete auth flow
@@ -686,6 +688,9 @@ class AuthController {
       // Get account completion status
       const accountCompletion = await User.getAccountCompletionStatus(userId);
 
+      // Get user wallets
+      const wallets = await Wallet.getUserWallets(userId);
+
       return res.status(200).json({
         success: true,
         user: {
@@ -700,6 +705,7 @@ class AuthController {
           createdAt: user.created_at,
           lastLogin: user.last_login_at,
         },
+        wallets,
         accountCompletion,
       });
     } catch (error) {
@@ -725,45 +731,42 @@ class AuthController {
         message: "Account deleted successfully",
       });
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        message: `could delete your account: ${error.message}`,
-      });
-      next(error);
+      logger.error(`Error deleting account: ${error.message}`);
+      next(error); // Ensure this is only called if no response has been sent
     }
   }
   // In auth.controller.js add these methods
   static async uploadDocument(req, res, next) {
     try {
       const { user } = req;
-      
+
       if (!req.file) {
         return res.status(400).json({
           success: false,
-          message: 'Document file is required',
-          acceptedTypes: ['image/jpeg', 'image/png', 'application/pdf'],
-          maxSize: '5MB'
+          message: "Document file is required",
+          acceptedTypes: ["image/jpeg", "image/png", "application/pdf"],
+          maxSize: "5MB",
         });
       }
-  
+
       const documentFile = req.file;
-      
+
       // Initialize Azure service
       const azureService = new AzureBlobStorageService({
         accountName: process.env.AZURE_STORAGE_ACCOUNT,
         accountKey: process.env.AZURE_STORAGE_KEY,
-        containerName: process.env.AZURE_KYC_CONTAINER
+        containerName: process.env.AZURE_KYC_CONTAINER,
       });
-  
+
       // Upload document to Azure
       const uploadResult = await azureService.uploadDocument({
         userId: user.userId,
         documentType: req.body.documentType,
         fileBuffer: documentFile.buffer,
         fileName: documentFile.originalname,
-        contentType: documentFile.mimetype
+        contentType: documentFile.mimetype,
       });
-  
+
       // Save document record to database
       const docRecord = await KYCDocument.create({
         userId: user.userId,
@@ -771,22 +774,21 @@ class AuthController {
         documentCountry: req.body.documentCountry,
         ...uploadResult,
         fileSize: documentFile.size,
-        fileType: documentFile.mimetype
+        fileType: documentFile.mimetype,
       });
-  
+
       // Mark account as active immediately after document upload
-      await User.updateAccountStatus(user.userId, 'active');
-  
+      await User.updateAccountStatus(user.userId, "active");
+
       res.status(201).json({
         success: true,
-        message: 'Document uploaded successfully. Your account is now active.',
+        message: "Document uploaded successfully. Your account is now active.",
         document: {
           id: docRecord.document_id,
           type: docRecord.document_type,
-          url: docRecord.blob_storage_url
-        }
+          url: docRecord.blob_storage_url,
+        },
       });
-  
     } catch (error) {
       logger.error(`Document upload failed: ${error.message}`);
       next(error);

@@ -924,11 +924,10 @@ class User {
    * @throws {Error} Throws an error if the user is not found, the password is invalid, or the deletion process fails.
    */
   static async deleteAccount(userId, password) {
-    // First, get the user to verify password
     const userQuery = `
-        SELECT password_hash 
-        FROM users 
-        WHERE user_id = $1;
+      SELECT password_hash 
+      FROM users 
+      WHERE user_id = $1;
     `;
 
     const userResult = await query(userQuery, [userId]);
@@ -944,7 +943,6 @@ class User {
       throw new Error("Invalid password");
     }
 
-    // Begin transaction
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -952,32 +950,28 @@ class User {
       // Invalidate all sessions
       await client.query(
         `
-            UPDATE user_sessions 
-            SET is_active = false, updated_at = $1
-            WHERE user_id = $2
+        UPDATE user_sessions 
+        SET is_active = false, updated_at = NOW()
+        WHERE user_id = $1
         `,
-        [new Date().toISOString(), userId]
+        [userId]
       );
 
       // Reset wallet balances to zero
       await client.query(
         `
-            UPDATE users
-            SET 
-                account_balance = 0.00,
-                trading_balance = 0.00,
-                referral_balance = 0.00,
-                updated_at = $1
-            WHERE user_id = $2
+        UPDATE wallets
+        SET balance = 0.00, locked_balance = 0.00, updated_at = NOW()
+        WHERE user_id = $1
         `,
-        [new Date().toISOString(), userId]
+        [userId]
       );
 
       // Delete KYC documents
       await client.query(
         `
-            DELETE FROM kyc_documents 
-            WHERE user_id = $1
+        DELETE FROM kyc_documents 
+        WHERE user_id = $1
         `,
         [userId]
       );
@@ -985,9 +979,9 @@ class User {
       // Delete user records
       const deleteResult = await client.query(
         `
-            DELETE FROM users 
-            WHERE user_id = $1
-            RETURNING user_id
+        DELETE FROM users 
+        WHERE user_id = $1
+        RETURNING user_id
         `,
         [userId]
       );
