@@ -106,7 +106,7 @@ class Trading {
 
       await client.query("COMMIT");
       logger.info(
-        `Trading startedcheck your profit after 7 days for withdrawal : ${tradingId}`
+        `Trading started check your profit after 7 days for withdrawal : ${tradingId}`
       );
       return result.rows[0];
     } catch (error) {

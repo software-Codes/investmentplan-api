@@ -10,8 +10,7 @@ const bcrypt = require("bcrypt");
 // const AzureBlobStorageService = require("../services/azure-blob-storage-kyc/azure-blob-storage.service");
 // const SmileIDService = require("../services/smile-id-kyc/smile-id.service");
 const { logger } = require("../utils/logger");
-const Wallet = require("../../Investment/src/models/wallet/wallet.models");
-
+const Wallet = require("../../../Investment/src/models/wallets/wallets.models");
 /**
  * User model - Handles all user-related database operations
  */
@@ -32,77 +31,62 @@ class User {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-
+      // First create the user
       const userId = uuidv4();
       const currentDate = new Date().toISOString();
       const saltRounds = 10;
       const passwordHash = await bcrypt.hash(userData.password, saltRounds);
-      const queryText = `
-      INSERT INTO users (
-        user_id, 
-        full_name, 
-        email, 
-        phone_number, 
-        password_hash, 
-        preferred_contact_method, 
-        email_verified, 
-        phone_verified, 
-        account_status, 
-        failed_login_attempts, 
-        created_at, 
-        updated_at
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
-      ) RETURNING 
-        user_id, 
-        full_name, 
-        email, 
-        phone_number, 
-        preferred_contact_method, 
-        email_verified, 
-        phone_verified, 
-        account_status, 
-        created_at;
-    `;
-      const values = [
+      const userQueryText = `
+            INSERT INTO users (
+              user_id, 
+              full_name, 
+              email, 
+              phone_number, 
+              password_hash, 
+              preferred_contact_method, 
+              created_at, 
+              updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+            RETURNING *
+          `;
+      const userValues = [
         userId,
         userData.fullName,
         userData.email.toLowerCase(),
         userData.phoneNumber,
         passwordHash,
         userData.preferredContactMethod || "email",
-        false,
-        false,
-        "pending",
-        0,
-        currentDate,
         currentDate,
       ];
-      const res = await client.query(queryText, values);
-      // Create wallets for the new user
-      await Wallet.createUserWallets(userId);
-      await client.query("COMMIT");
-      logger.info(
-        `Created new user with ID: ${userId} and initialized wallets`
-      );
-      return res.rows[0];
-    } catch (error) {
-      await client.query("ROLLBACK");
-
-      if (error.code === "23505") {
-        if (error.detail.includes("email")) {
-          throw new Error("Email address already registered");
-        } else if (error.detail.includes("phone_number")) {
-          throw new Error("Phone number already registered");
-        }
+      const userResult = await client.query(userQueryText, userValues);
+      // Then create the wallets
+      const walletTypes = ["account", "trading", "referral"];
+      for (const type of walletTypes) {
+        await client.query(
+          `INSERT INTO wallets (
+        wallet_id,
+        user_id,
+        wallet_type,
+        created_at,
+        updated_at
+      ) VALUES ($1, $2, $3, $4, $4)`,
+          [uuidv4(), userId, type, currentDate]
+        );
       }
 
+      await client.query("COMMIT");
+      logger.info(`Created user and wallets for ID: ${userId}`);
+      const { password_hash, ...userWithoutPassword } = userResult.rows[0];
+      return userWithoutPassword;
+    } catch (error) {
+      await client.query("ROLLBACK");
       logger.error(`Failed to create user: ${error.message}`);
-      throw new Error(`Failed to create the user: ${error.message}`);
+      throw error;
     } finally {
       client.release();
     }
   }
+
   /**
    * Find a user by their email address
    * @param {string} email - User's email address

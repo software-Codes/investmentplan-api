@@ -146,27 +146,8 @@ class Deposit {
     return true;
 
   }
-   /**
-   * Check for duplicate transaction
-   * @param {string} binanceTxId - Binance transaction ID
-   * @returns {Promise<boolean>} True if duplicate exists
-   */
-  static async checkDuplicateTransaction(binanceTxId)
-  {
-    try {
-      const result = await query(
-        'SELECT EXISTS(SELECT 1 FROM deposits WHERE binance_tx_id = $1)',
-        [binanceTxId]
-      );
-      return result.rows[0].exists;
-      
-    } catch (error) {
-      logger.error(`Duplicate check failed: ${error.message}`);
-      throw new Error('Failed to check for duplicate transaction');
-      
-    }
 
-  }
+
 }
 
 module.exports = Deposit;

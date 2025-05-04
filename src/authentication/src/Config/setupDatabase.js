@@ -68,22 +68,20 @@ async function createTables() {
     logger.info("Creating database tables...");
 
     await query(`
-      CREATE TABLE IF NOT EXISTS users (
-          user_id UUID PRIMARY KEY,
-          full_name VARCHAR(255) NOT NULL,
-          email VARCHAR(255) UNIQUE NOT NULL,
-          phone_number VARCHAR(20) UNIQUE NOT NULL,
-          password_hash VARCHAR(255) NOT NULL,
-          preferred_contact_method contact_method_enum NOT NULL DEFAULT 'email',
-          email_verified BOOLEAN NOT NULL DEFAULT FALSE,
-          phone_verified BOOLEAN NOT NULL DEFAULT FALSE,
-          account_status account_status_enum NOT NULL DEFAULT 'pending',
-          failed_login_attempts INTEGER NOT NULL DEFAULT 0,
-          last_login_at TIMESTAMP WITH TIME ZONE,
-          last_login_ip VARCHAR(45),
-          created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-          updated_at TIMESTAMP WITH TIME ZONE NOT NULL
-      );
+CREATE TABLE IF NOT EXISTS users (
+    user_id UUID PRIMARY KEY,
+    full_name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    phone_number VARCHAR(50) UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    preferred_contact_method VARCHAR(50) DEFAULT 'email',
+    email_verified BOOLEAN DEFAULT false,
+    phone_verified BOOLEAN DEFAULT false,
+    account_status VARCHAR(50) DEFAULT 'pending',
+    failed_login_attempts INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
     `);
     // Add this to your createTables function
 
@@ -253,16 +251,17 @@ CREATE TABLE IF NOT EXISTS withdrawals (
                       `);
     //wallets tables
     await query(`
-                  CREATE TABLE IF NOT EXISTS wallets (
+CREATE TABLE IF NOT EXISTS wallets (
     wallet_id UUID PRIMARY KEY,
-    user_id UUID REFERENCES users(user_id),
+    user_id UUID NOT NULL,
     wallet_type VARCHAR(50) NOT NULL,
     balance NUMERIC(12, 2) DEFAULT 0.00,
     locked_balance NUMERIC(12, 2) DEFAULT 0.00,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT valid_wallet_type CHECK (wallet_type IN ('account', 'trading', 'referral')),
-    CONSTRAINT unique_user_wallet UNIQUE (user_id, wallet_type)
+    CONSTRAINT unique_user_wallet UNIQUE (user_id, wallet_type),
+    CONSTRAINT wallets_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
                                               `);
 
@@ -346,11 +345,11 @@ async function createIndexes() {
 }
 
 // -- Add locked_balance to wallets table
-// ALTER TABLE wallets 
+// ALTER TABLE wallets
 // ADD COLUMN IF NOT EXISTS locked_balance NUMERIC(12, 2) DEFAULT 0.00;
 
 // -- Update withdrawals table with new columns
-// ALTER TABLE withdrawals 
+// ALTER TABLE withdrawals
 // ADD COLUMN IF NOT EXISTS processing_deadline TIMESTAMPTZ,
 // ADD COLUMN IF NOT EXISTS admin_id UUID REFERENCES admins(admin_id),
 // ADD COLUMN IF NOT EXISTS binance_address VARCHAR(255) NOT NULL,
@@ -361,19 +360,19 @@ async function createIndexes() {
 
 // -- Add constraints
 // ALTER TABLE withdrawals
-// ADD CONSTRAINT valid_withdrawal_status 
+// ADD CONSTRAINT valid_withdrawal_status
 // CHECK (status IN ('pending', 'approved', 'completed', 'cancelled', 'failed')),
-// ADD CONSTRAINT valid_withdrawal_amount 
+// ADD CONSTRAINT valid_withdrawal_amount
 // CHECK (amount >= 10);
 
 // -- Create indexes for better performance
-// CREATE INDEX IF NOT EXISTS idx_withdrawals_status_deadline 
+// CREATE INDEX IF NOT EXISTS idx_withdrawals_status_deadline
 // ON withdrawals(status, processing_deadline);
 
-// CREATE INDEX IF NOT EXISTS idx_withdrawals_user_status 
+// CREATE INDEX IF NOT EXISTS idx_withdrawals_user_status
 // ON withdrawals(user_id, status);
 
-// CREATE INDEX IF NOT EXISTS idx_wallets_locked_balance 
+// CREATE INDEX IF NOT EXISTS idx_wallets_locked_balance
 // ON wallets(user_id, wallet_type, locked_balance);
 
 // -- Add trigger to automatically set processing deadline
