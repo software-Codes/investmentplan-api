@@ -153,12 +153,32 @@ const createApp = () => {
     // Register authentication routes with middleware
     app.use("/api/v1/auth", authRoutes);
   }
+  const corsOptions = {
+    origin: [process.env.CORS_ORIGIN, 'http://localhost:3000'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+    maxAge: 86400,
+  };
+  
+  app.use(cors(corsOptions));
+  
   // apis for the admin
   app.use("/api/v1/admin", adminRoutes);
   //apis for document kyc verification
   app.use("/api/v1/kyc", kycRoutes)
   //documentation apis
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+// Serve Swagger documentation
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  explorer: true,
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: "Neptune Platform API Documentation",
+  customfavIcon: "/favicon.ico",
+  swaggerOptions: {
+    persistAuthorization: true,
+    displayRequestDuration: true
+  }
+}));
 
   /**
    * Handle 404 errors
