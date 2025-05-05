@@ -1,25 +1,51 @@
-# Use an official Node.js 16 image as a base
-FROM node:22
+# Stage 1: Build stage
+FROM node:20-slim AS builder
 
-# Set the working directory to /app
+# Set working directory
 WORKDIR /app
 
-# Copy the package.json file
+# Copy package files
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci --only=production
 
-# Copy the rest of the application code
+# Copy source code
 COPY . .
 
-# Build the application using Vite
+# Build the application
 RUN npm run build
 
+# Stage 2: Production stage
+FROM node:20-slim AS production
 
+# Set environment variables
+ENV NODE_ENV=production
+ENV PORT=3000
 
-# Expose the port the application will use
-EXPOSE 3000
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nodeuser && \
+    mkdir -p /app/node_modules && \
+    chown -R nodeuser:nodejs /app
 
-# Run the command to start the development server when the container launches
-CMD ["npm", "run", "dev"]
+# Set working directory
+WORKDIR /app
+
+# Copy built assets from builder
+COPY --from=builder --chown=nodeuser:nodejs /app/dist ./dist
+COPY --from=builder --chown=nodeuser:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nodeuser:nodejs /app/package*.json ./
+
+# Security: Switch to non-root user
+USER nodeuser
+
+# Expose port
+EXPOSE $PORT
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=3s --start-period=30s \
+  CMD curl -f http://localhost:$PORT/health || exit 1
+
+# Start the application
+CMD ["npm", "run", "start"]
