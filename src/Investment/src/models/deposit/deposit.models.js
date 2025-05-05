@@ -129,14 +129,13 @@ class Deposit {
       throw new Error("Failed to fetch deposit history");
     }
   }
-    /**
+  /**
    * Validate deposit amount
    * @param {number} amount - Deposit amount
    * @returns {boolean} True if valid
    * @throws {Error} If invalid amount
    */
-  static validateDepositAmount(amount)
-  {
+  static validateDepositAmount(amount) {
     if (amount < LIMITS.MIN_DEPOSIT) {
       throw new Error(`Minimum deposit amount is $${LIMITS.MIN_DEPOSIT}`);
     }
@@ -144,10 +143,46 @@ class Deposit {
       throw new Error(`Maximum deposit amount is $${LIMITS.MAX_DEPOSIT}`);
     }
     return true;
-
+  }
+  /**
+   * Find deposit by transaction ID
+   * @param {string} txId - Binance transaction ID
+   */
+  static async findByTxId(txId) {
+    try {
+      const result = await query(
+        "SELECT * FROM deposits WHERE binance_tx_id = $1",
+        [txId]
+      );
+      return result.rows[0];
+    } catch (error) {
+      logger.error("Failed to find deposit by txId:", error);
+      throw error;
+    }
   }
 
-
+  /**
+   * Update deposit status
+   * @param {string} depositId - Deposit ID
+   * @param {Object} updates - Fields to update
+   */
+  static async update(depositId, updates) {
+    try {
+      const result = await query(
+        `UPDATE deposits 
+         SET status = $1, 
+             verified_at = $2,
+             updated_at = NOW()
+         WHERE deposit_id = $3
+         RETURNING *`,
+        [updates.status, updates.verifiedAt, depositId]
+      );
+      return result.rows[0];
+    } catch (error) {
+      logger.error("Failed to update deposit:", error);
+      throw error;
+    }
+  }
 }
 
 module.exports = Deposit;
