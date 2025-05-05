@@ -1,20 +1,25 @@
-# Specify the base image
-FROM node:22.2.0
+# Use an official Node.js 16 image as a base
+FROM node:22
 
-# Set the working directory in the container
+# Set the working directory to /app
 WORKDIR /app
 
-# Copy package.json and package-lock.json to leverage Docker cache
+# Copy the package.json file
 COPY package*.json ./
 
-# Install project dependencies
+# Install dependencies
 RUN npm install
 
-# Bundle app source inside Docker image
-COPY ./src ./src
+# Copy the rest of the application code
+COPY . .
 
-# Your app binds to port 3000 so you'll use the EXPOSE instruction to have it mapped by the docker daemon
+# Build the application using Vite
+RUN npm run build
+
+
+
+# Expose the port the application will use
 EXPOSE 3000
 
-# Define the command to run your app using CMD which defines your runtime
+# Run the command to start the development server when the container launches
 CMD ["npm", "run", "dev"]
