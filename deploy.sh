@@ -42,19 +42,19 @@ trap 'handle_error $LINENO "$BASH_COMMAND"' ERR
 
 # Configuration and Initialization
 initialize_configuration() {
-    # Traverse up the directory tree to find globalenvdev.config
+    # Traverse up the directory tree to find globalenv.config
     local dir
     dir=$(pwd)
     while [[ "$dir" != "/" ]]; do
         if [[ -f "$dir/globalenvdev.config" ]]; then
             # shellcheck source=/dev/null
-            source "$dir/globalenvdev.config"
+            source "$dir/globalenv.config"
             return 0
         fi
         dir=$(dirname "$dir")
     done
 
-    log_error "globalenvdev.config not found"
+    log_error "globalenv.config not found"
     exit 1
 }
 
