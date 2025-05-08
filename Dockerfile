@@ -1,43 +1,25 @@
-# Stage 1: Build stage
+# Build stage
 FROM node:20-alpine AS builder
-
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 COPY . .
 RUN npm run build
 
-# Stage 2: Production stage
+# Production stage
 FROM node:20-alpine
-
-# Set environment variables
-ENV NODE_ENV=production
-ENV PORT=3000
-
-# Create app directory and non-root user
-RUN addgroup -S nodejs && \
-    adduser -S nodeuser -G nodejs && \
-    mkdir -p /app && \
-    chown -R nodeuser:nodejs /app
-
+ENV NODE_ENV=production PORT=3000
 WORKDIR /app
 
-# Copy package files and install dependencies
-COPY package*.json ./
-RUN npm ci --only=production
+# Create non-root user
+RUN addgroup -S nodejs && adduser -S nodeuser -G nodejs
 
-# Copy application code
-COPY --chown=nodeuser:nodejs . .
+# Copy only production dependencies and built files
+COPY --from=builder /app/package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+COPY --from=builder --chown=nodeuser:nodejs /app/dist ./dist
 
-# Switch to non-root user
 USER nodeuser
-
-# Expose port
 EXPOSE $PORT
-
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=3s --start-period=30s \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:$PORT/health || exit 1
-
-# Start the application
-CMD ["npm", "run", "dev"]
+HEALTHCHECK --interval=30s --timeout=3s CMD wget -q --spider http://localhost:$PORT/health || exit 1
+CMD ["node", "dist/main.js"]

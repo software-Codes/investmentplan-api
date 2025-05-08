@@ -184,19 +184,19 @@ const createApp = () => {
     })
   );
 
-  app.use(
-    "/api/v1/webhook",
-    bodyParser.raw({ type: "application/json" }),
-    (req, res, next) => {
-      if (req.rawBody) {
-        req.body = JSON.parse(req.rawBody);
-      }
-      next();
-    }
-  );
+  // app.use(
+  //   "/api/v1/webhook",
+  //   bodyParser.raw({ type: "application/json" }),
+  //   (req, res, next) => {
+  //     if (req.rawBody) {
+  //       req.body = JSON.parse(req.rawBody);
+  //     }
+  //     next();
+  //   }
+  // );
 
-  const webhookRoutes = require("../src/Investment/src/routes/webhooks/webhooks.routes");
-  app.use("/api/v1/webhook", webhookRoutes);
+  // const webhookRoutes = require("../src/Investment/src/routes/webhooks/webhooks.routes");
+  // app.use("/api/v1/webhook", webhookRoutes);
 
   /**
    * Handle 404 errors
