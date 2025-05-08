@@ -42,7 +42,7 @@ trap 'handle_error $LINENO "$BASH_COMMAND"' ERR
 
 # Configuration and Initialization
 initialize_configuration() {
-    # Traverse up the directory tree to find globalenvdev.config
+    # Traverse up the directory tree to find globalenv.config
     local dir
     dir=$(pwd)
     while [[ "$dir" != "/" ]]; do
@@ -100,6 +100,56 @@ setup_azure_context() {
     fi
 }
 
+# Create or get service principal for GitHub integration
+setup_service_principal() {
+    local sp_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-github-sp"
+    local sp_json
+    
+    log_info "Setting up service principal for GitHub integration: $sp_name"
+    
+    # Check if service principal exists
+    if sp_json=$(az ad sp list --display-name "$sp_name" --query "[0]" -o json 2>/dev/null) && [ "$sp_json" != "null" ]; then
+        log_info "Service principal already exists, retrieving details..."
+        # Get the object ID from the existing service principal
+        local sp_id
+        sp_id=$(echo "$sp_json" | jq -r '.id')
+        
+        # Assign necessary roles if not already assigned
+        log_info "Ensuring service principal has necessary role assignments..."
+        
+        # Check if contributor role is assigned to resource group
+        if ! az role assignment list --assignee "$sp_id" --scope "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}" --query "[?roleDefinitionName=='Contributor']" | grep -q "Contributor"; then
+            log_info "Assigning Contributor role to service principal on resource group ${PROJECT_RESOURCE_GROUP}"
+            az role assignment create --assignee "$sp_id" --role Contributor --scope "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}"
+        fi
+        
+        # Return existing service principal ID
+        SP_ID="$sp_id"
+        log_success "Using existing service principal $sp_name"
+    else
+        log_info "Creating new service principal: $sp_name"
+        # Create a new service principal with Contributor role
+        local sp_output
+        sp_output=$(az ad sp create-for-rbac --name "$sp_name" --role Contributor --scopes "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}" -o json)
+        
+        # Extract and store service principal ID
+        SP_ID=$(echo "$sp_output" | jq -r '.appId')
+        SP_PASSWORD=$(echo "$sp_output" | jq -r '.password')
+        SP_TENANT=$(echo "$sp_output" | jq -r '.tenant')
+        
+        log_success "Created new service principal $sp_name"
+        
+        # Wait for AAD propagation
+        log_info "Waiting for AAD propagation (30 seconds)..."
+        sleep 30
+    fi
+    
+    # Export service principal details for use in deployment
+    export SP_ID
+    
+    log_info "Service principal setup complete"
+}
+
 # Prepare Azure Container Registry
 prepare_container_registry() {
     local registry_name="${ENVIRONMENT_PREFIX}${PROJECT_PREFIX}contregistry"
@@ -153,7 +203,10 @@ deploy_container_app() {
 
     log_info "Deploying Container App: $container_app_name"
 
-    # Deploy container app with valid parameters
+    # Deploy container app with service principal
+    log_info "Deploying Container App with service principal"
+    
+    # Use service principal ID for deployment
     az containerapp up \
         --name "$container_app_name" \
         --resource-group "$PROJECT_RESOURCE_GROUP" \
@@ -162,8 +215,8 @@ deploy_container_app() {
         --branch "$branch" \
         --registry-server "$registry_url" \
         --ingress external \
-        --target-port 3000
-
+        --target-port 3000 \
+        --service-principal-id "$SP_ID"
 
     # Update container app settings
     log_info "Configuring Container App scaling and resources"
@@ -173,13 +226,7 @@ deploy_container_app() {
         --cpu 0.25 \
         --memory 0.5Gi \
         --min-replicas 1 \
-        --max-replicas 10 \
-
-
-    # Optional: Disable public ingress if internal service
-    # az containerapp ingress disable \
-    #     --name "$container_app_name" \
-    #     --resource-group "$PROJECT_RESOURCE_GROUP"
+        --max-replicas 10
 }
 
 # Main deployment workflow
@@ -200,6 +247,7 @@ main() {
 
     # Azure deployment steps
     setup_azure_context
+    setup_service_principal  # Add service principal setup before other Azure resources
     prepare_container_registry
     prepare_container_apps_environment
     deploy_container_app
