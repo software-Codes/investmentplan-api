@@ -49,6 +49,7 @@ initialize_configuration() {
         if [[ -f "$dir/globalenv.config" ]]; then
             # shellcheck source=/dev/null
             source "$dir/globalenv.config"
+            log_info "Loaded configuration from $dir/globalenv.config"
             return 0
         fi
         dir=$(dirname "$dir")
@@ -75,6 +76,9 @@ validate_configuration() {
             return 1
         fi
     done
+    
+    # Create log directory if it doesn't exist
+    mkdir -p "${LOG_FOLDER}"
 }
 
 # Azure authentication and subscription setup
@@ -98,6 +102,15 @@ setup_azure_context() {
         log_error "Failed to set Azure subscription. Current: $current_subscription, Expected: $PROJECT_SUBSCRIPTION_ID"
         return 1
     fi
+    
+    # Ensure we have permissions to create service principals if needed
+    log_info "Checking permissions for service principal creation"
+    
+    # Create resource group if it doesn't exist
+    if ! az group show --name "$PROJECT_RESOURCE_GROUP" &>/dev/null; then
+        log_warning "Resource group does not exist. Creating..."
+        az group create --name "$PROJECT_RESOURCE_GROUP" --location "$PROJECT_LOCATION"
+    fi
 }
 
 # Prepare Azure Container Registry
@@ -116,15 +129,84 @@ prepare_container_registry() {
             --admin-enabled true
     fi
 
+    # Get registry credentials
+    local acr_username
+    local acr_password
+    
+    log_info "Retrieving ACR credentials"
+    acr_username=$(az acr credential show --name "$registry_name" --query "username" -o tsv)
+    acr_password=$(az acr credential show --name "$registry_name" --query "passwords[0].value" -o tsv)
+    
     # Login to ACR
-    az acr login --name "$registry_name"
+    log_info "Logging in to ACR: $registry_name"
+    echo "$acr_password" | docker login "$registry_name.azurecr.io" --username "$acr_username" --password-stdin
+    
+    # Export variables for later use
+    export ACR_USERNAME="$acr_username"
+    export ACR_PASSWORD="$acr_password"
+    export ACR_NAME="$registry_name"
+}
+
+# Create service principal for container app
+create_service_principal() {
+    local sp_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-worker-sp"
+    
+    log_info "Creating service principal: $sp_name"
+    
+    # Check if the service principal already exists
+    local sp_exists
+    sp_exists=$(az ad sp list --display-name "$sp_name" --query "[].displayName" -o tsv || echo "")
+    
+    if [[ -n "$sp_exists" ]]; then
+        log_warning "Service principal already exists. Using existing service principal."
+        
+        # Get service principal ID
+        local sp_id
+        sp_id=$(az ad sp list --display-name "$sp_name" --query "[].appId" -o tsv)
+        
+        # Reset credentials
+        log_info "Resetting credentials for existing service principal"
+        local sp_password
+        sp_password=$(az ad sp credential reset --id "$sp_id" --query "password" -o tsv)
+        
+        # Export service principal credentials
+        export SP_ID="$sp_id"
+        export SP_PASSWORD="$sp_password"
+    else
+        # Create new service principal with Contributor role
+        log_info "Creating new service principal with required permissions"
+        local sp_output
+        sp_output=$(az ad sp create-for-rbac \
+            --name "$sp_name" \
+            --role "Contributor" \
+            --scopes "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}" \
+            --query "{id:appId, password:password}" \
+            -o json)
+        
+        # Extract and export service principal credentials
+        export SP_ID=$(echo "$sp_output" | jq -r .id)
+        export SP_PASSWORD=$(echo "$sp_output" | jq -r .password)
+        
+        # Add AcrPush role assignment
+        log_info "Assigning AcrPush role to service principal"
+        az role assignment create \
+            --assignee "$SP_ID" \
+            --role "AcrPush" \
+            --scope "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}/providers/Microsoft.ContainerRegistry/registries/${ACR_NAME}"
+            
+        # Allow time for role assignment to propagate
+        log_info "Waiting for role assignments to propagate..."
+        sleep 30
+    fi
+    
+    log_success "Service principal setup complete"
 }
 
 # Prepare Container Apps Environment
 prepare_container_apps_environment() {
     local environment_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-BackendContainerAppsEnv"
     local container_app_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-worker"
-    local registry_url="${ENVIRONMENT_PREFIX}${PROJECT_PREFIX}contregistry.azurecr.io"
+    local registry_url="${ACR_NAME}.azurecr.io"
 
     log_info "Preparing Container Apps Environment: $environment_name"
 
@@ -141,44 +223,85 @@ prepare_container_apps_environment() {
     echo "Environment Name: $environment_name"
     echo "Container App Name: $container_app_name"
     echo "Registry URL: $registry_url"
+    
+    # Export for later use
+    export CONTAINER_ENV_NAME="$environment_name"
+    export CONTAINER_APP_NAME="$container_app_name"
+    export REGISTRY_URL="$registry_url"
 }
 
 # Build and deploy container
 deploy_container_app() {
-    local environment_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-BackendContainerAppsEnv"
-    local container_app_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-worker"
-    local registry_url="${ENVIRONMENT_PREFIX}${PROJECT_PREFIX}contregistry.azurecr.io"
+    log_info "Deploying Container App: $CONTAINER_APP_NAME"
+    
     local repo_url="https://github.com/software-Codes/investmentplan-api"
     local branch="main"
 
-    log_info "Deploying Container App: $container_app_name"
+    # Check if the container app already exists
+    if az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$PROJECT_RESOURCE_GROUP" &>/dev/null; then
+        log_warning "Container App already exists. Updating..."
+        
+        # Update existing container app
+        az containerapp update \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$PROJECT_RESOURCE_GROUP" \
+            --cpu 0.25 \
+            --memory 0.5Gi \
+            --min-replicas 1 \
+            --max-replicas 10
+    else
+        # Create new container app with explicit registry credentials to avoid service principal creation
+        log_info "Creating new Container App with specified registry credentials"
+        
+        az containerapp create \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$PROJECT_RESOURCE_GROUP" \
+            --environment "$CONTAINER_ENV_NAME" \
+            --registry-server "$REGISTRY_URL" \
+            --registry-username "$ACR_USERNAME" \
+            --registry-password "$ACR_PASSWORD" \
+            --cpu 0.25 \
+            --memory 0.5Gi \
+            --min-replicas 1 \
+            --max-replicas 10 \
+            --ingress external \
+            --target-port 8000 \
+            --image "$REGISTRY_URL/investmentplan-api:latest"
+    }
+    
+    # Deploy container app with GitHub integration (optional)
+    # Note: This is separate to allow for flexibility
+    setup_github_integration
+}
 
-    # Deploy container app with valid parameters
-    az containerapp up \
-        --name "$container_app_name" \
-        --resource-group "$PROJECT_RESOURCE_GROUP" \
-        --environment "$environment_name" \
-        --repo "$repo_url" \
-        --branch "$branch" \
-        --registry-server "$registry_url" \
-        --ingress external \
-        --target-port 8000
-
-
-    # Update container app settings
-    log_info "Configuring Container App scaling and resources"
-    az containerapp update \
-        --name "$container_app_name" \
-        --resource-group "$PROJECT_RESOURCE_GROUP" \
-        --cpu 0.25 \
-        --memory 0.5Gi \
-        --min-replicas 1 \
-        --max-replicas 10
-
-    # Optional: Disable public ingress if internal service
-    # az containerapp ingress disable \
-    #     --name "$container_app_name" \
-    #     --resource-group "$PROJECT_RESOURCE_GROUP"
+# Setup GitHub integration for Container App
+setup_github_integration() {
+    log_info "Setting up GitHub integration"
+    
+    local repo_url="https://github.com/software-Codes/investmentplan-api"
+    local branch="main"
+    
+    # Check if we have GitHub integration credentials in the config
+    if [[ -n "${GITHUB_PAT:-}" ]]; then
+        log_info "Configuring GitHub continuous deployment"
+        
+        # Configure GitHub integration using PAT
+        az containerapp github-action add \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$PROJECT_RESOURCE_GROUP" \
+            --repo-url "$repo_url" \
+            --branch "$branch" \
+            --registry-url "$REGISTRY_URL" \
+            --registry-username "$ACR_USERNAME" \
+            --registry-password "$ACR_PASSWORD" \
+            --github-token "$GITHUB_PAT" \
+            --service-principal-client-id "$SP_ID" \
+            --service-principal-client-secret "$SP_PASSWORD" \
+            --service-principal-tenant-id "$(az account show --query tenantId -o tsv)"
+    else
+        log_warning "GitHub Personal Access Token not found in config. Skipping GitHub integration."
+        log_info "To enable CI/CD, add GITHUB_PAT to your globalenv.config file."
+    fi
 }
 
 # Main deployment workflow
@@ -192,6 +315,9 @@ main() {
     timestamp=$(date +"%Y%m%d_%H%M%S")
     local log_file="${LOG_FOLDER}/deploy_worker_${timestamp}.log"
 
+    # Create log directory if it doesn't exist
+    mkdir -p "$(dirname "$log_file")"
+
     # Redirect output to log file and console
     exec > >(tee -a "$log_file") 2>&1
 
@@ -200,6 +326,7 @@ main() {
     # Azure deployment steps
     setup_azure_context
     prepare_container_registry
+    create_service_principal
     prepare_container_apps_environment
     deploy_container_app
 
