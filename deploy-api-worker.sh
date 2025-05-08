@@ -103,29 +103,49 @@ setup_azure_context() {
 # Create or get service principal for GitHub integration
 setup_service_principal() {
     local sp_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-github-sp"
-    local sp_json
     
     log_info "Setting up service principal for GitHub integration: $sp_name"
     
     # Check if service principal exists
-    if sp_json=$(az ad sp list --display-name "$sp_name" --query "[0]" -o json 2>/dev/null) && [ "$sp_json" != "null" ]; then
+    local sp_id=""
+    local sp_json=""
+    
+    # Get the service principal with proper error handling
+    sp_json=$(az ad sp list --display-name "$sp_name" --query "[0]" -o json 2>/dev/null || echo "null")
+    
+    if [[ "$sp_json" != "null" && -n "$sp_json" ]]; then
         log_info "Service principal already exists, retrieving details..."
+        
         # Get the object ID from the existing service principal
-        local sp_id
-        sp_id=$(echo "$sp_json" | jq -r '.id')
+        sp_id=$(echo "$sp_json" | jq -r '.appId // empty')
         
-        # Assign necessary roles if not already assigned
-        log_info "Ensuring service principal has necessary role assignments..."
-        
-        # Check if contributor role is assigned to resource group
-        if ! az role assignment list --assignee "$sp_id" --scope "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}" --query "[?roleDefinitionName=='Contributor']" | grep -q "Contributor"; then
-            log_info "Assigning Contributor role to service principal on resource group ${PROJECT_RESOURCE_GROUP}"
-            az role assignment create --assignee "$sp_id" --role Contributor --scope "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}"
+        # Validate that we have a valid service principal ID
+        if [[ -z "$sp_id" ]]; then
+            log_error "Failed to retrieve service principal ID. Creating a new one..."
+            # Create a new one since we couldn't get valid details
+            local sp_output
+            sp_output=$(az ad sp create-for-rbac --name "$sp_name" --role Contributor --scopes "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}" -o json)
+            
+            sp_id=$(echo "$sp_output" | jq -r '.appId')
+            log_success "Created new service principal $sp_name with ID: $sp_id"
+        else
+            log_info "Retrieved existing service principal with ID: $sp_id"
+            
+            # Check if contributor role is assigned to resource group
+            if [[ -n "$sp_id" ]]; then
+                log_info "Ensuring service principal has necessary role assignments..."
+                
+                local assignment_exists
+                assignment_exists=$(az role assignment list --assignee "$sp_id" --scope "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}" --query "[?roleDefinitionName=='Contributor']" -o json)
+                
+                if [[ "$assignment_exists" == "[]" ]]; then
+                    log_info "Assigning Contributor role to service principal on resource group ${PROJECT_RESOURCE_GROUP}"
+                    az role assignment create --assignee "$sp_id" --role Contributor --scope "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}"
+                else
+                    log_info "Contributor role already assigned to service principal"
+                fi
+            fi
         fi
-        
-        # Return existing service principal ID
-        SP_ID="$sp_id"
-        log_success "Using existing service principal $sp_name"
     else
         log_info "Creating new service principal: $sp_name"
         # Create a new service principal with Contributor role
@@ -133,21 +153,28 @@ setup_service_principal() {
         sp_output=$(az ad sp create-for-rbac --name "$sp_name" --role Contributor --scopes "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}" -o json)
         
         # Extract and store service principal ID
-        SP_ID=$(echo "$sp_output" | jq -r '.appId')
-        SP_PASSWORD=$(echo "$sp_output" | jq -r '.password')
-        SP_TENANT=$(echo "$sp_output" | jq -r '.tenant')
+        sp_id=$(echo "$sp_output" | jq -r '.appId')
+        local sp_password=$(echo "$sp_output" | jq -r '.password')
+        local sp_tenant=$(echo "$sp_output" | jq -r '.tenant')
         
-        log_success "Created new service principal $sp_name"
+        log_success "Created new service principal $sp_name with ID: $sp_id"
         
         # Wait for AAD propagation
         log_info "Waiting for AAD propagation (30 seconds)..."
         sleep 30
     fi
     
+    # Validate service principal ID before continuing
+    if [[ -z "$sp_id" ]]; then
+        log_error "Failed to get or create a valid service principal ID. Exiting."
+        exit 1
+    fi
+    
     # Export service principal details for use in deployment
+    SP_ID="$sp_id"
     export SP_ID
     
-    log_info "Service principal setup complete"
+    log_info "Service principal setup complete with ID: $SP_ID"
 }
 
 # Prepare Azure Container Registry
@@ -203,8 +230,14 @@ deploy_container_app() {
 
     log_info "Deploying Container App: $container_app_name"
 
+    # Validate SP_ID is set before deployment
+    if [[ -z "$SP_ID" ]]; then
+        log_error "Service Principal ID is not set. Cannot proceed with deployment."
+        exit 1
+    fi
+
     # Deploy container app with service principal
-    log_info "Deploying Container App with service principal"
+    log_info "Deploying Container App with service principal: $SP_ID"
     
     # Use service principal ID for deployment
     az containerapp up \
@@ -239,6 +272,9 @@ main() {
     local timestamp
     timestamp=$(date +"%Y%m%d_%H%M%S")
     local log_file="${LOG_FOLDER}/deploy_worker_${timestamp}.log"
+
+    # Ensure log directory exists
+    mkdir -p "${LOG_FOLDER}"
 
     # Redirect output to log file and console
     exec > >(tee -a "$log_file") 2>&1
