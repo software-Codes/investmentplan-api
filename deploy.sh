@@ -46,7 +46,7 @@ initialize_configuration() {
     local dir
     dir=$(pwd)
     while [[ "$dir" != "/" ]]; do
-        if [[ -f "$dir/globalenvdev.config" ]]; then
+        if [[ -f "$dir/globalenv.config" ]]; then
             # shellcheck source=/dev/null
             source "$dir/globalenv.config"
             return 0
