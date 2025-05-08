@@ -267,7 +267,7 @@ deploy_container_app() {
             --ingress external \
             --target-port 8000 \
             --image "$REGISTRY_URL/investmentplan-api:latest"
-    }
+    fi
     
     # Deploy container app with GitHub integration (optional)
     # Note: This is separate to allow for flexibility
