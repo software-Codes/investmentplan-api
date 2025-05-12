@@ -40,9 +40,19 @@ handle_error() {
 # Trap errors
 trap 'handle_error $LINENO "$BASH_COMMAND"' ERR
 
+# Check for required dependencies
+check_dependencies() {
+    local dependencies=("az" "jq")
+    for dep in "${dependencies[@]}"; do
+        if ! command -v "$dep" &>/dev/null; then
+            log_error "$dep is not installed. Please install it and try again."
+            exit 1
+        fi
+    done
+}
+
 # Configuration and Initialization
 initialize_configuration() {
-    # Traverse up the directory tree to find globalenvdev.config
     local dir
     dir=$(pwd)
     while [[ "$dir" != "/" ]]; do
@@ -53,12 +63,10 @@ initialize_configuration() {
         fi
         dir=$(dirname "$dir")
     done
-
-    log_error "globalenv.config not found"
+    log_error "globalenvdev.config not found"
     exit 1
 }
 
-# Validate required environment variables
 validate_configuration() {
     local required_vars=(
         "ENVIRONMENT_PREFIX"
@@ -68,7 +76,6 @@ validate_configuration() {
         "PROJECT_RESOURCE_GROUP"
         "PROJECT_SUBSCRIPTION_ID"
     )
-
     for var in "${required_vars[@]}"; do
         if [[ -z "${!var:-}" ]]; then
             log_error "Required environment variable $var is not set"
@@ -79,19 +86,15 @@ validate_configuration() {
 
 # Azure authentication and subscription setup
 setup_azure_context() {
-    log_info "Checking Azure CLI authentication"
-    
-    # Login if not already authenticated
+    log_info "Checking Azure CLI authentication" 
     if ! az account show &>/dev/null; then
         log_warning "Not logged in to Azure CLI. Initiating login..."
         az login
     fi
 
-    # Set the target subscription
     log_info "Setting Azure subscription to ${PROJECT_SUBSCRIPTION_ID}"
     az account set --subscription "${PROJECT_SUBSCRIPTION_ID}"
 
-    # Verify subscription is set correctly
     local current_subscription
     current_subscription=$(az account show --query id -o tsv)
     if [[ "$current_subscription" != "$PROJECT_SUBSCRIPTION_ID" ]]; then
@@ -100,60 +103,89 @@ setup_azure_context() {
     fi
 }
 
-# Prepare Azure Container Registry
+# Service Principal Management
+setup_service_principal() {
+    local sp_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-sp"
+    local registry_name="${ENVIRONMENT_PREFIX}${PROJECT_PREFIX}contregistry"
+
+    # Use existing credentials if available
+    if [[ -n "${SERVICE_PRINCIPAL_CLIENT_ID:-}" && -n "${SERVICE_PRINCIPAL_CLIENT_SECRET:-}" ]]; then
+        log_info "Using pre-configured service principal"
+        return 0
+    fi
+
+    log_info "Checking for service principal: $sp_name"
+    if az ad sp show --id "http://$sp_name" &>/dev/null; then
+        log_warning "Service principal exists but credentials not provided."
+        log_warning "Set SERVICE_PRINCIPAL_CLIENT_ID and SERVICE_PRINCIPAL_CLIENT_SECRET or reset credentials with:"
+        log_warning "az ad sp credential reset --name $sp_name"
+        exit 1
+    else
+        log_warning "Creating new service principal with required permissions..."
+        local sub_id=$PROJECT_SUBSCRIPTION_ID
+        local rg=$PROJECT_RESOURCE_GROUP
+        
+        # Create service principal with Contributor access
+        local sp_output
+        sp_output=$(az ad sp create-for-rbac --name "$sp_name" \
+            --scopes "/subscriptions/$sub_id/resourceGroups/$rg" \
+            --role "Contributor" \
+            --query "{appId: appId, password: password}" -o json)
+
+        export SERVICE_PRINCIPAL_CLIENT_ID=$(jq -r '.appId' <<< "$sp_output")
+        export SERVICE_PRINCIPAL_CLIENT_SECRET=$(jq -r '.password' <<< "$sp_output")
+
+        # Assign ACR permissions
+        local acr_id
+        acr_id=$(az acr show --name "$registry_name" --query id -o tsv)
+        az role assignment create --assignee "$SERVICE_PRINCIPAL_CLIENT_ID" \
+            --role "AcrPush" \
+            --scope "$acr_id"
+
+        log_success "Service principal created. Client ID: $SERVICE_PRINCIPAL_CLIENT_ID"
+        log_warning "SAVE THESE CREDENTIALS IMMEDIATELY:"
+        log_warning "Client Secret: $SERVICE_PRINCIPAL_CLIENT_SECRET"
+    fi
+}
+
+# Container Registry Management
 prepare_container_registry() {
     local registry_name="${ENVIRONMENT_PREFIX}${PROJECT_PREFIX}contregistry"
     
     log_info "Checking Azure Container Registry: $registry_name"
-    
-    # Check if registry exists, create if not
     if ! az acr show --name "$registry_name" &>/dev/null; then
-        log_warning "Container Registry does not exist. Creating..."
+        log_warning "Creating container registry..."
         az acr create \
             --name "$registry_name" \
             --resource-group "$PROJECT_RESOURCE_GROUP" \
             --sku Basic \
             --admin-enabled true
     fi
-
-    # Login to ACR
     az acr login --name "$registry_name"
 }
 
-# Prepare Container Apps Environment
+# Container Apps Environment Setup
 prepare_container_apps_environment() {
     local environment_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-BackendContainerAppsEnv"
-    local container_app_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-worker"
-    local registry_url="${ENVIRONMENT_PREFIX}${PROJECT_PREFIX}contregistry.azurecr.io"
-
-    log_info "Preparing Container Apps Environment: $environment_name"
-
-    # Create Container Apps Environment if not exists
+    
+    log_info "Preparing environment: $environment_name"
     if ! az containerapp env show --name "$environment_name" --resource-group "$PROJECT_RESOURCE_GROUP" &>/dev/null; then
-        log_warning "Container Apps Environment does not exist. Creating..."
         az containerapp env create \
             --name "$environment_name" \
             --resource-group "$PROJECT_RESOURCE_GROUP" \
             --location "$PROJECT_LOCATION"
     fi
-
-    # Output environment and app details for reference
-    echo "Environment Name: $environment_name"
-    echo "Container App Name: $container_app_name"
-    echo "Registry URL: $registry_url"
 }
 
-# Build and deploy container
+# Container Deployment
 deploy_container_app() {
     local environment_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-BackendContainerAppsEnv"
     local container_app_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-worker"
     local registry_url="${ENVIRONMENT_PREFIX}${PROJECT_PREFIX}contregistry.azurecr.io"
-    local repo_url="https://github.com/software-Codes/investmentplan-api"
+    local repo_url="https://github.com/software-Codes/investmentplan-api.git"
     local branch="development"
 
-    log_info "Deploying Container App: $container_app_name"
-
-    # Deploy container app with valid parameters
+    log_info "Deploying container app: $container_app_name"
     az containerapp up \
         --name "$container_app_name" \
         --resource-group "$PROJECT_RESOURCE_GROUP" \
@@ -162,45 +194,35 @@ deploy_container_app() {
         --branch "$branch" \
         --registry-server "$registry_url" \
         --ingress external \
-        --target-port 3000
+        --target-port 8000 \
+        --service-principal-client-id "$SERVICE_PRINCIPAL_CLIENT_ID" \
+        --service-principal-client-secret "$SERVICE_PRINCIPAL_CLIENT_SECRET"
 
-
-    # Update container app settings
-    log_info "Configuring Container App scaling and resources"
+    log_info "Optimizing container resources..."
     az containerapp update \
         --name "$container_app_name" \
         --resource-group "$PROJECT_RESOURCE_GROUP" \
         --cpu 0.25 \
         --memory 0.5Gi \
         --min-replicas 1 \
-        --max-replicas 10 \
-
-
-    # Optional: Disable public ingress if internal service
-    # az containerapp ingress disable \
-    #     --name "$container_app_name" \
-    #     --resource-group "$PROJECT_RESOURCE_GROUP"
+        --max-replicas 10
 }
 
-# Main deployment workflow
+# Main workflow
 main() {
-    # Configuration and setup must happen FIRST
     initialize_configuration
     validate_configuration
+    check_dependencies
 
-    # Now safe to use LOG_FOLDER
     local timestamp
     timestamp=$(date +"%Y%m%d_%H%M%S")
     local log_file="${LOG_FOLDER}/deploy_worker_${timestamp}.log"
-
-    # Redirect output to log file and console
     exec > >(tee -a "$log_file") 2>&1
 
-    log_info "Starting Container App Deployment Workflow"
-
-    # Azure deployment steps
+    log_info "Starting deployment workflow"
     setup_azure_context
     prepare_container_registry
+    setup_service_principal
     prepare_container_apps_environment
     deploy_container_app
 
@@ -208,5 +230,4 @@ main() {
     log_info "Detailed logs available at: $log_file"
 }
 
-# Execute main function with error handling
 main "$@"
