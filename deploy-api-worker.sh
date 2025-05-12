@@ -149,7 +149,7 @@ deploy_container_app() {
     local container_app_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-worker"
     local registry_url="${ENVIRONMENT_PREFIX}${PROJECT_PREFIX}contregistry.azurecr.io"
     local repo_url="https://github.com/software-Codes/investmentplan-api"
-    local branch="main"
+    local branch="development"
 
     log_info "Deploying Container App: $container_app_name"
 

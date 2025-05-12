@@ -169,34 +169,34 @@ const createApp = () => {
   app.use("/api/v1/kyc", kycRoutes);
   //documentation apis
   // Serve Swagger documentation
-  app.use(
-    "/api-docs",
-    swaggerUi.serve,
-    swaggerUi.setup(swaggerSpec, {
-      explorer: true,
-      customCss: ".swagger-ui .topbar { display: none }",
-      customSiteTitle: "Neptune Platform API Documentation",
-      customfavIcon: "/favicon.ico",
-      swaggerOptions: {
-        persistAuthorization: true,
-        displayRequestDuration: true,
-      },
-    })
-  );
+  // app.use(
+  //   "/api-docs",
+  //   swaggerUi.serve,
+  //   swaggerUi.setup(swaggerSpec, {
+  //     explorer: true,
+  //     customCss: ".swagger-ui .topbar { display: none }",
+  //     customSiteTitle: "Neptune Platform API Documentation",
+  //     customfavIcon: "/favicon.ico",
+  //     swaggerOptions: {
+  //       persistAuthorization: true,
+  //       displayRequestDuration: true,
+  //     },
+  //   })
+  // );
 
-  app.use(
-    "/api/v1/webhook",
-    bodyParser.raw({ type: "application/json" }),
-    (req, res, next) => {
-      if (req.rawBody) {
-        req.body = JSON.parse(req.rawBody);
-      }
-      next();
-    }
-  );
+  // app.use(
+  //   "/api/v1/webhook",
+  //   bodyParser.raw({ type: "application/json" }),
+  //   (req, res, next) => {
+  //     if (req.rawBody) {
+  //       req.body = JSON.parse(req.rawBody);
+  //     }
+  //     next();
+  //   }
+  // );
 
-  const webhookRoutes = require("../src/Investment/src/routes/webhooks/webhooks.routes");
-  app.use("/api/v1/webhook", webhookRoutes);
+  // const webhookRoutes = require("../src/Investment/src/routes/webhooks/webhooks.routes");
+  // app.use("/api/v1/webhook", webhookRoutes);
 
   /**
    * Handle 404 errors
