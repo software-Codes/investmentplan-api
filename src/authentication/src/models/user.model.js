@@ -836,7 +836,7 @@ class User {
    */
   static async initiatePasswordReset(userId, purpose = "reset_password") {
     // Find user
-    const user = await this.findById(userId);
+    const user = await this.findbyEmail(email);
     if (!user) {
       throw new Error("User not found");
     }
@@ -1040,9 +1040,9 @@ class User {
     }
   }
   //resetting password
-  static async initiatePasswordReset(userId, purpose = "reset_password") {
+  static async initiatePasswordReset(email, purpose = "reset_password") {
     //find the user
-    const user = await this.findById(userId);
+    const user = await this.findbyEmail(email);
     if (!user) {
       throw new Error("User not found");
     }

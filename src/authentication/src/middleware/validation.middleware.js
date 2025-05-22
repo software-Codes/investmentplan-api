@@ -17,7 +17,7 @@ exports.validateRegistration = [
       "Invalid phone number format. Must be between 10-15 digits, can start with +"
     ),
   body("password")
-    .isLength({ min: 8 })
+    .isLength({ min: 8 }) 
     .withMessage("Password must be at least 8 characters long"),
   body("preferredContactMethod")
     .isIn(["email", "phone"])
@@ -37,7 +37,7 @@ exports.validateRegistration = [
     }
   },
 ];
-
+ 
 /**
  * Validates login input
  * @param {Object} req - Express request object
@@ -47,7 +47,7 @@ exports.validateRegistration = [
  */
 exports.validateLogin = [
   body("email").isEmail().withMessage("Invalid email address"),
-  body("password")
+  body("password")  
     .isLength({ min: 8 })
     .withMessage("Password must be at least 8 characters long"),
   (req, res, next) => {

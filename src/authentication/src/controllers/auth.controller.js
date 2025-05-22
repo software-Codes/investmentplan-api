@@ -109,89 +109,95 @@ class AuthController {
    * @param {string} [credentials.userAgent] - User's browser/device information
    * @returns {Promise<Object>} Authentication result with user data and token
    */
-  static async login(req, res, next) {
-    try {
-      const credentials = req.body;
-      //find user by email
-      const user = await User.findbyEmail(credentials.email);
-      if (!user) {
-        return res.status(401).json({
-          success: false,
-          message: "Invalid email or password",
-        });
-      }
-      // Check if the user has verified their account
-      if (!user.email_verified && !user.phone_verified) {
-        return res.status(403).json({
-          success: false,
-          message: "Account not verified. Please verify your account first.",
-          userId: user.user_id,
-          requiresVerification: true,
-        });
-      }
-      // Check if account is active
-      if (user.account_status !== "active") {
-        return res.status(403).json({
-          success: false,
-          message: `Account is ${user.account_status}. Please contact support.`,
-        });
-      }
-      // Verify password
-      const isPasswordValid = await User.validatePassword(
-        credentials.password,
-        user.password_hash
-      );
-      if (!isPasswordValid) {
-        // Increment failed login attempts
-        await User.incrementFailedLoginAttempts(user.user_id);
-        return res.status(401).json({
-          success: false,
-          message: "Invalid email or password",
-        });
-      }
-      // Reset failed login attempts on successful login
-      await User.updateLoginInfo(user.user_id, req.ip);
-      // Create session and return JWT token
-      const session = await User.createSession(user.user_id, {
-        ipAddress: req.ip,
-        userAgent: req.headers["user-agent"],
+// Fixed AuthController login method
+static async login(req, res, next) {
+  try {
+    const credentials = req.body;
+    //find user by email
+    const user = await User.findbyEmail(credentials.email);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
       });
-      //Generate JWT token
-      const token = AuthController.generateJwtToken(
-        user.user_id,
-        session.session_id
-      );
+    }
+    // Check if the user has verified their account
+    if (!user.email_verified && !user.phone_verified) {
+      return res.status(403).json({
+        success: false,
+        message: "Account not verified. Please verify your account first.",
+        userId: user.user_id,
+        requiresVerification: true,
+      });
+    }
+    // Check if account is active
+    if (user.account_status !== "active") {
+      return res.status(403).json({
+        success: false,
+        message: `Account is ${user.account_status}. Please contact support.`,
+      });
+    }
+    // Verify password
+    const isPasswordValid = await User.validatePassword(
+      credentials.password,
+      user.password_hash
+    );
+    if (!isPasswordValid) {
+      // Increment failed login attempts
+      await User.incrementFailedLoginAttempts(user.user_id);
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
+    // Reset failed login attempts on successful login
+    await User.updateLoginInfo(user.user_id, req.ip);
+    // Create session and return JWT token
+    const session = await User.createSession(user.user_id, {
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+    //Generate JWT token
+    const token = AuthController.generateJwtToken(
+      user.user_id,
+      session.session_id
+    );
 
-      // Get account completion status
-      const accountCompletion = await User.getAccountCompletionStatus(
-        user.user_id
-      );
-      return res.status(200).json({
-        success: true,
-        // user: {
-        //   userId: user.user_id,
-        //   fullName: user.full_name,
-        //   email: user.email,
-        //   phoneNumber: user.phone_number,
-        //   preferredContactMethod: user.preferred_contact_method,
-        //   accountStatus: user.account_status,
-        // },
-        // accountCompletion,
+    // Get account completion status
+    const accountCompletion = await User.getAccountCompletionStatus(
+      user.user_id
+    );
+    
+    // FIXED: Return proper data structure that matches frontend expectations
+    return res.status(200).json({
+      success: true,
+      data: {
         token,
+        user: {
+          userId: user.user_id,
+          fullName: user.full_name,
+          email: user.email,
+          phoneNumber: user.phone_number,
+          preferredContactMethod: user.preferred_contact_method,
+          accountStatus: user.account_status,
+          email_verified: user.email_verified,
+          phone_verified: user.phone_verified,
+        },
         session: {
           sessionId: session.session_id,
           expiresAt: session.expires_at,
         },
-      });
-    } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({
-        success: false,
-        message: `Error occured during login ${error.message}`,
-      });
-    }
+        accountCompletion,
+      }
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({
+      success: false,
+      message: `Error occurred during login ${error.message}`,
+    });
   }
-
+}
   /**
    * Resend verification OTP for a user who hasn't verified yet
    * @param {Object} req - Express request object
@@ -600,15 +606,15 @@ class AuthController {
    */
   static async initiatePasswordReset(req, res, next) {
     try {
-      const { userId } = req.body;
+      const { email, phoneNumber } = req.body;
 
       // Validate that the user ID is provided
-      if (!userId) {
-        return next(new Error("User ID is required"));
+      if (!email && !phoneNumber) {
+        return next(new Error(" email, or phone number is required"));
       }
 
       // Initiate the password reset process
-      const result = await User.initiatePasswordReset(userId);
+      const result = await User.initiatePasswordReset(email, phoneNumber);
 
       // Respond with success and OTP delivery details
       return res.status(200).json({
