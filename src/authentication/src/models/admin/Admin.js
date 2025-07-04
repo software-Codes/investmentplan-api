@@ -17,59 +17,60 @@ class Admin {
    * Time Complexity: O(1) - Single insert operation
    * Space Complexity: O(1) - Fixed memory usage
    */
-  static async create(adminData) {
-    const client = await pool.connect();
+static async create(adminData) {
+  const client = await pool.connect();
 
-    try {
-      await client.query('BEGIN');
+  try {
+    await client.query('BEGIN');
 
-      const adminId = uuidv4();
-      const currentTimestamp = new Date().toISOString();
-
-      const passwordHash = await bcrypt.hash(adminData.password, 12);
-
-      const queryText = `
-        INSERT INTO admins (
-          admin_id,
-          full_name,
-          email,
-          password_hash,
-          role,
-          created_at,
-          updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $6)
-        RETURNING admin_id, full_name, email, role, created_at, updated_at
-      `;
-
-      const values = [
-        adminId,
-        adminData.fullName.trim(),
-        adminData.email.toLowerCase().trim(),
-        passwordHash,
-        adminData.role || 'admin',
-        currentTimestamp
-      ];
-
-      const result = await client.query(queryText, values);
-
-      await client.query('COMMIT');
-
-      logger.info(`Admin created successfully`, {
-        adminId,
-        email: adminData.email,
-        role: adminData.role
-      });
-
-      return result.rows[0];
-
-    } catch (error) {
-      await client.query('ROLLBACK');
-      logger.error(`Failed to create admin: ${error.message}`);
-      throw error;
-    } finally {
-      client.release();
+    // Ensure email is unique across both admins and users
+    const emailCheckQuery = `
+      SELECT email FROM users WHERE LOWER(email) = $1
+    `;
+    const emailExists = await client.query(emailCheckQuery, [adminData.email.toLowerCase()]);
+    if (emailExists.rows.length > 0) {
+      throw new Error('Email already exists in users table');
     }
+
+    const adminId = uuidv4();
+    const currentTimestamp = new Date().toISOString();
+    const passwordHash = await bcrypt.hash(adminData.password, 12);
+
+    const insertQuery = `
+      INSERT INTO admins (
+        admin_id, full_name, email, password_hash, role, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $6)
+      RETURNING admin_id, full_name, email, role, created_at, updated_at
+    `;
+
+    const values = [
+      adminId,
+      adminData.fullName.trim(),
+      adminData.email.toLowerCase().trim(),
+      passwordHash,
+      adminData.role || 'admin',
+      currentTimestamp
+    ];
+
+    const result = await client.query(insertQuery, values);
+    await client.query('COMMIT');
+
+    logger.info(`Admin created successfully`, {
+      adminId,
+      email: adminData.email,
+      role: adminData.role
+    });
+
+    return result.rows[0];
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    logger.error(`Failed to create admin: ${error.message}`);
+    throw error;
+  } finally {
+    client.release();
   }
+}
 
 
   static async findByEmail(email) {

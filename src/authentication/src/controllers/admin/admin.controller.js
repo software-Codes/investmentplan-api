@@ -4,6 +4,7 @@ const { logger } = require('../../utils/logger');
 const { success, error, STATUS_CODES } = require('../../utils/response.util');
 const { generateAdminToken } = require('../../utils/admin/token.util')
 const bcrypt = require('bcrypt')
+const {query} = require('../../Config/neon-database')
 
 
 class AdminController {
@@ -16,7 +17,6 @@ class AdminController {
    */
   static async register(req, res, next) {
     try {
-      // Input validation and sanitization
       const { fullName, email, password, role } = req.body;
 
       if (!fullName || !email || !password) {
@@ -45,8 +45,17 @@ class AdminController {
         );
       }
 
+      // Check against users table
+      const userExists = await query(
+        `SELECT user_id FROM users WHERE LOWER(email) = $1`,
+        [email.toLowerCase()]
+      );
+      if (userExists.rows.length > 0) {
+        return res.status(STATUS_CODES.BAD_REQUEST).json(
+          error(new Error('Email conflict'), 'This email is already used by a user account', STATUS_CODES.BAD_REQUEST)
+        );
+      }
 
-      // Create admin account
       const adminData = {
         fullName: fullName.trim(),
         email: email.toLowerCase().trim(),
@@ -55,8 +64,6 @@ class AdminController {
       };
 
       const newAdmin = await Admin.create(adminData);
-
-
 
       logger.info('Admin registration successful', {
         adminId: newAdmin.admin_id,
@@ -83,6 +90,7 @@ class AdminController {
       next(error);
     }
   }
+
 
   /**
    * Admin Login
