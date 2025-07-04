@@ -170,10 +170,26 @@ const createApp = () => {
   app.use(cors(corsOptions));
 
 
+// app.use(
+//   "/api/v1/webhook",
+//   bodyParser.raw({ type: "application/json" }),
+//   (req, res, next) => {
+//     if (req.rawBody) {
+//       req.body = JSON.parse(req.rawBody);
+//     }
+//     next();
+//   }
+// );
 
-  function notFoundHandler(req, res) {
-    res.status(404).json({ error: "Not Found" });
-  }
+// const webhookRoutes = require("../src/Investment/src/routes/webhooks/webhooks.routes");
+// app.use("/api/v1/webhook", webhookRoutes);
+
+/**
+ * Handle 404 errors
+ */
+function notFoundHandler(req, res) {
+  res.status(404).json({ error: "Not Found" });
+}
 
   /**
    * Central error handler

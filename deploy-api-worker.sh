@@ -53,21 +53,39 @@ check_dependencies() {
 
 # Configuration and Initialization
 initialize_configuration() {
-    # Load configuration from globalenv.config or set defaults
-    export ENVIRONMENT_PREFIX="${ENVIRONMENT_PREFIX:-dev}"
-    export PROJECT_PREFIX="${PROJECT_PREFIX:-nep}"
-    export AWS_REGION="${AWS_REGION:-us-east-1}"
-    export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-    
-    # Derived names
-    export ECR_REPOSITORY_NAME="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-repo"
-    export ECS_CLUSTER_NAME="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-cluster"
-    export ECS_SERVICE_NAME="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-service"
-    export ECS_TASK_DEFINITION_NAME="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-task"
-    
-    # Logging
-    export LOG_FOLDER="${LOG_FOLDER:-${HOME}/logs}"
-    mkdir -p "$LOG_FOLDER"
+    # Traverse up the directory tree to find globalenvdev.config
+    local dir
+    dir=$(pwd)
+    while [[ "$dir" != "/" ]]; do
+        if [[ -f "$dir/globalenv.config" ]]; then
+            # shellcheck source=/dev/null
+            source "$dir/globalenv.config"
+            return 0
+        fi
+        dir=$(dirname "$dir")
+    done
+
+    log_error "globalenv.config not found"
+    exit 1
+}
+
+# Validate required environment variables
+validate_configuration() {
+    local required_vars=(
+        "ENVIRONMENT_PREFIX"
+        "PROJECT_PREFIX"
+        "PROJECT_LOCATION"
+        "LOG_FOLDER"
+        "PROJECT_RESOURCE_GROUP"
+        "PROJECT_SUBSCRIPTION_ID"
+    )
+
+    for var in "${required_vars[@]}"; do
+        if [[ -z "${!var:-}" ]]; then
+            log_error "Required environment variable $var is not set"
+            return 1
+        fi
+    done
 }
 
 # AWS Authentication and Context Setup
@@ -84,6 +102,83 @@ setup_aws_context() {
     log_info "Region: $AWS_REGION"
 }
 
+# Create or get service principal for GitHub integration
+setup_service_principal() {
+    local sp_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-github-sp"
+    
+    log_info "Setting up service principal for GitHub integration: $sp_name"
+    
+    # Check if service principal exists
+    local sp_id=""
+    local sp_json=""
+    
+    # Get the service principal with proper error handling
+    sp_json=$(az ad sp list --display-name "$sp_name" --query "[0]" -o json 2>/dev/null || echo "null")
+    
+    if [[ "$sp_json" != "null" && -n "$sp_json" ]]; then
+        log_info "Service principal already exists, retrieving details..."
+        
+        # Get the object ID from the existing service principal
+        sp_id=$(echo "$sp_json" | jq -r '.appId // empty')
+        
+        # Validate that we have a valid service principal ID
+        if [[ -z "$sp_id" ]]; then
+            log_error "Failed to retrieve service principal ID. Creating a new one..."
+            # Create a new one since we couldn't get valid details
+            local sp_output
+            sp_output=$(az ad sp create-for-rbac --name "$sp_name" --role Contributor --scopes "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}" -o json)
+            
+            sp_id=$(echo "$sp_output" | jq -r '.appId')
+            log_success "Created new service principal $sp_name with ID: $sp_id"
+        else
+            log_info "Retrieved existing service principal with ID: $sp_id"
+            
+            # Check if contributor role is assigned to resource group
+            if [[ -n "$sp_id" ]]; then
+                log_info "Ensuring service principal has necessary role assignments..."
+                
+                local assignment_exists
+                assignment_exists=$(az role assignment list --assignee "$sp_id" --scope "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}" --query "[?roleDefinitionName=='Contributor']" -o json)
+                
+                if [[ "$assignment_exists" == "[]" ]]; then
+                    log_info "Assigning Contributor role to service principal on resource group ${PROJECT_RESOURCE_GROUP}"
+                    az role assignment create --assignee "$sp_id" --role Contributor --scope "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}"
+                else
+                    log_info "Contributor role already assigned to service principal"
+                fi
+            fi
+        fi
+    else
+        log_info "Creating new service principal: $sp_name"
+        # Create a new service principal with Contributor role
+        local sp_output
+        sp_output=$(az ad sp create-for-rbac --name "$sp_name" --role Contributor --scopes "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}" -o json)
+        
+        # Extract and store service principal ID
+        sp_id=$(echo "$sp_output" | jq -r '.appId')
+        local sp_password=$(echo "$sp_output" | jq -r '.password')
+        local sp_tenant=$(echo "$sp_output" | jq -r '.tenant')
+        
+        log_success "Created new service principal $sp_name with ID: $sp_id"
+        
+        # Wait for AAD propagation
+        log_info "Waiting for AAD propagation (30 seconds)..."
+        sleep 30
+    fi
+    
+    # Validate service principal ID before continuing
+    if [[ -z "$sp_id" ]]; then
+        log_error "Failed to get or create a valid service principal ID. Exiting."
+        exit 1
+    fi
+    
+    # Export service principal details for use in deployment
+    SP_ID="$sp_id"
+    export SP_ID
+    
+    log_info "Service principal setup complete with ID: $SP_ID"
+}
+
 # ECR Repository Management
 prepare_ecr_repository() {
     log_info "Checking/Creating ECR Repository: $ECR_REPOSITORY_NAME"
@@ -98,122 +193,88 @@ prepare_ecr_repository() {
         log_info "ECR Repository already exists"
     fi
 
-    # Authenticate Docker with ECR
-    aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+    # Login to ACR
+    az acr login --name "$registry_name"
 }
 
-# Docker Image Build and Push
-build_and_push_image() {
-    local image_tag="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-$(date +%Y%m%d-%H%M%S)"
-    local full_image_uri="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY_NAME:$image_tag"
+# Prepare Container Apps Environment
+prepare_container_apps_environment() {
+    local environment_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-BackendContainerAppsEnv"
+    local container_app_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-worker"
+    local registry_url="${ENVIRONMENT_PREFIX}${PROJECT_PREFIX}contregistry.azurecr.io"
 
-    log_info "Building Docker image"
-    docker build -t "$ECR_REPOSITORY_NAME:latest" -t "$full_image_uri" .
+    log_info "Preparing Container Apps Environment: $environment_name"
 
-    log_info "Pushing image to ECR: $full_image_uri"
-    docker push "$full_image_uri"
-    docker push "$ECR_REPOSITORY_NAME:latest"
-
-    echo "$full_image_uri"  # Return the full image URI for task definition
-}
-
-# ECS Cluster and Service Setup
-prepare_ecs_infrastructure() {
-    # Create ECS Cluster if not exists
-    if ! aws ecs describe-clusters --clusters "$ECS_CLUSTER_NAME" &>/dev/null; then
-        aws ecs create-cluster --cluster-name "$ECS_CLUSTER_NAME"
-        log_success "ECS Cluster created: $ECS_CLUSTER_NAME"
-    fi
-}
-
-# Create ECS Task Definition
-create_ecs_task_definition() {
-    local image_uri="$1"
-    
-    local task_definition_json=$(cat <<EOF
-{
-    "family": "$ECS_TASK_DEFINITION_NAME",
-    "networkMode": "awsvpc",
-    "requiresCompatibilities": ["FARGATE"],
-    "cpu": "256",
-    "memory": "512",
-    "executionRoleArn": "arn:aws:iam::$AWS_ACCOUNT_ID:role/ecsTaskExecutionRole",
-    "containerDefinitions": [{
-        "name": "${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-container",
-        "image": "$image_uri",
-        "portMappings": [{
-            "containerPort": 3000,
-            "hostPort": 3000,
-            "protocol": "tcp"
-        }],
-        "essential": true
-    }]
-}
-EOF
-)
-
-    local task_definition_response
-    task_definition_response=$(aws ecs register-task-definition \
-        --cli-input-json "$task_definition_json")
-
-    local revision
-    revision=$(echo "$task_definition_response" | jq '.taskDefinition.revision')
-    log_success "ECS Task Definition created with revision $revision"
-
-    echo "$revision"
-}
-
-# Create or Update ECS Service
-create_or_update_ecs_service() {
-    local task_definition_revision="$1"
-    
-    # Subnets and Security Group (you'll need to replace these with your actual VPC details)
-    local SUBNET_IDS="subnet-12345678,subnet-87654321"
-    local SECURITY_GROUP_ID="sg-12345678"
-
-    # Check if service exists
-    if aws ecs describe-services --cluster "$ECS_CLUSTER_NAME" --services "$ECS_SERVICE_NAME" &>/dev/null; then
-        log_info "Updating existing ECS service"
-        aws ecs update-service \
-            --cluster "$ECS_CLUSTER_NAME" \
-            --service "$ECS_SERVICE_NAME" \
-            --task-definition "$ECS_TASK_DEFINITION_NAME:$task_definition_revision" \
-            --force-new-deployment
-    else
-        log_info "Creating new ECS service"
-        aws ecs create-service \
-            --cluster "$ECS_CLUSTER_NAME" \
-            --service-name "$ECS_SERVICE_NAME" \
-            --task-definition "$ECS_TASK_DEFINITION_NAME:$task_definition_revision" \
-            --launch-type FARGATE \
-            --desired-count 1 \
-            --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_IDS],securityGroups=[$SECURITY_GROUP_ID],assignPublicIp=ENABLED}"
+    # Create Container Apps Environment if not exists
+    if ! az containerapp env show --name "$environment_name" --resource-group "$PROJECT_RESOURCE_GROUP" &>/dev/null; then
+        log_warning "Container Apps Environment does not exist. Creating..."
+        az containerapp env create \
+            --name "$environment_name" \
+            --resource-group "$PROJECT_RESOURCE_GROUP" \
+            --location "$PROJECT_LOCATION"
     fi
 
-    log_success "ECS Service deployment initiated"
+    # Output environment and app details for reference
+    echo "Environment Name: $environment_name"
+    echo "Container App Name: $container_app_name"
+    echo "Registry URL: $registry_url"
+}
+
+# Build and deploy container
+deploy_container_app() {
+    local environment_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-BackendContainerAppsEnv"
+    local container_app_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-worker"
+    local registry_url="${ENVIRONMENT_PREFIX}${PROJECT_PREFIX}contregistry.azurecr.io"
+    local repo_url="https://github.com/software-Codes/investmentplan-api"
+    local branch="main"
+
+    log_info "Deploying Container App: $container_app_name"
+
+    # Deploy container app with valid parameters
+    az containerapp up \
+        --name "$container_app_name" \
+        --resource-group "$PROJECT_RESOURCE_GROUP" \
+        --environment "$environment_name" \
+        --repo "$repo_url" \
+        --branch "$branch" \
+        --registry-server "$registry_url" \
+        --ingress external \
+        --target-port 3000
+
+
+    # Update container app settings
+    log_info "Configuring Container App scaling and resources"
+    az containerapp update \
+        --name "$container_app_name" \
+        --resource-group "$PROJECT_RESOURCE_GROUP" \
+        --cpu 0.25 \
+        --memory 0.5Gi \
+        --min-replicas 1 \
+        --max-replicas 10 \
+
+
+    # Optional: Disable public ingress if internal service
+    # az containerapp ingress disable \
+    #     --name "$container_app_name" \
+    #     --resource-group "$PROJECT_RESOURCE_GROUP"
 }
 
 # Main deployment workflow
 main() {
     local timestamp
     timestamp=$(date +"%Y%m%d_%H%M%S")
-    local log_file="${LOG_FOLDER}/aws_deploy_${timestamp}.log"
+    local log_file="${LOG_FOLDER}/deploy_worker_${timestamp}.log"
+
+    # Redirect output to log file and console
     exec > >(tee -a "$log_file") 2>&1
 
-    log_info "Starting AWS ECS Deployment Workflow"
-    
-    check_dependencies
-    initialize_configuration
-    setup_aws_context
-    prepare_ecr_repository
-    
-    local image_uri
-    image_uri=$(build_and_push_image)
-    
-    prepare_ecs_infrastructure
-    local task_revision
-    task_revision=$(create_ecs_task_definition "$image_uri")
-    create_or_update_ecs_service "$task_revision"
+    log_info "Starting Container App Deployment Workflow"
+
+    # Azure deployment steps
+    setup_azure_context
+    prepare_container_registry
+    prepare_container_apps_environment
+    deploy_container_app
 
     log_success "Deployment completed successfully"
     log_info "Detailed logs available at: $log_file"
