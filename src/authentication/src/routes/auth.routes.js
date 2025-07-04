@@ -306,7 +306,7 @@ router.post("/verify-otp", validateOtpVerification, (req, res, next) => {
 });
 
 // Logout route protected by authentication
-router.post(
+router.post(  
   "/logout",
   authenticate, // Changed from authMiddleware to authenticate
   (req, res, next) => {

@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        - USERNAME=devuser
+        - USER_UID=1000
+        - USER_GID=1000
+
+    volumes:
+      # Mount source code
+      - .:/workspace:cached
+      # Mount npm cache
+      - npm-cache:/home/devuser/.npm
+      # Docker socket for Docker-in-Docker capabilities
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    ports:
+      - "3000:3000"   # Application port
+      - "9229:9229"   # Node.js debug port
+
+    environment:
+      - NODE_ENV=development
+      - NPM_CONFIG_CACHE=/home/devuser/.npm
+
+    # Enable interactive & TTY
+    stdin_open: true
+    tty: true
+
+    # Allows running privileged for Docker-in-Docker
+    privileged: true
+
+volumes:
+  npm-cache:

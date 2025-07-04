@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Enhanced Deployment Script for Azure Container Apps with Robust Error Handling and Logging
+# Enhanced Deployment Script for AWS ECS with Robust Error Handling and Logging
 
 # Strict mode for better error handling
 set -euo pipefail
@@ -40,9 +40,20 @@ handle_error() {
 # Trap errors
 trap 'handle_error $LINENO "$BASH_COMMAND"' ERR
 
+# Check for required dependencies
+check_dependencies() {
+    local dependencies=("aws" "docker" "jq")
+    for dep in "${dependencies[@]}"; do
+        if ! command -v "$dep" &>/dev/null; then
+            log_error "$dep is not installed. Please install it and try again."
+            exit 1
+        fi
+    done
+}
+
 # Configuration and Initialization
 initialize_configuration() {
-    # Traverse up the directory tree to find globalenv.config
+    # Traverse up the directory tree to find globalenvdev.config
     local dir
     dir=$(pwd)
     while [[ "$dir" != "/" ]]; do
@@ -77,27 +88,18 @@ validate_configuration() {
     done
 }
 
-# Azure authentication and subscription setup
-setup_azure_context() {
-    log_info "Checking Azure CLI authentication"
+# AWS Authentication and Context Setup
+setup_aws_context() {
+    log_info "Checking AWS CLI authentication"
     
-    # Login if not already authenticated
-    if ! az account show &>/dev/null; then
-        log_warning "Not logged in to Azure CLI. Initiating login..."
-        az login
+    # Check if already authenticated
+    if ! aws sts get-caller-identity &>/dev/null; then
+        log_warning "Not authenticated with AWS. Please run 'aws configure' or use AWS credentials."
+        exit 1
     fi
 
-    # Set the target subscription
-    log_info "Setting Azure subscription to ${PROJECT_SUBSCRIPTION_ID}"
-    az account set --subscription "${PROJECT_SUBSCRIPTION_ID}"
-
-    # Verify subscription is set correctly
-    local current_subscription
-    current_subscription=$(az account show --query id -o tsv)
-    if [[ "$current_subscription" != "$PROJECT_SUBSCRIPTION_ID" ]]; then
-        log_error "Failed to set Azure subscription. Current: $current_subscription, Expected: $PROJECT_SUBSCRIPTION_ID"
-        return 1
-    fi
+    log_info "Authenticated AWS Account: $AWS_ACCOUNT_ID"
+    log_info "Region: $AWS_REGION"
 }
 
 # Create or get service principal for GitHub integration
@@ -177,20 +179,18 @@ setup_service_principal() {
     log_info "Service principal setup complete with ID: $SP_ID"
 }
 
-# Prepare Azure Container Registry
-prepare_container_registry() {
-    local registry_name="${ENVIRONMENT_PREFIX}${PROJECT_PREFIX}contregistry"
+# ECR Repository Management
+prepare_ecr_repository() {
+    log_info "Checking/Creating ECR Repository: $ECR_REPOSITORY_NAME"
     
-    log_info "Checking Azure Container Registry: $registry_name"
-    
-    # Check if registry exists, create if not
-    if ! az acr show --name "$registry_name" &>/dev/null; then
-        log_warning "Container Registry does not exist. Creating..."
-        az acr create \
-            --name "$registry_name" \
-            --resource-group "$PROJECT_RESOURCE_GROUP" \
-            --sku Basic \
-            --admin-enabled true
+    # Check if repository exists, create if not
+    if ! aws ecr describe-repositories --repository-names "$ECR_REPOSITORY_NAME" &>/dev/null; then
+        aws ecr create-repository \
+            --repository-name "$ECR_REPOSITORY_NAME" \
+            --region "$AWS_REGION"
+        log_success "ECR Repository created"
+    else
+        log_info "ECR Repository already exists"
     fi
 
     # Login to ACR
@@ -230,16 +230,7 @@ deploy_container_app() {
 
     log_info "Deploying Container App: $container_app_name"
 
-    # Validate SP_ID is set before deployment
-    if [[ -z "$SP_ID" ]]; then
-        log_error "Service Principal ID is not set. Cannot proceed with deployment."
-        exit 1
-    fi
-
-    # Deploy container app with service principal
-    log_info "Deploying Container App with service principal: $SP_ID"
-    
-    # Use service principal ID for deployment
+    # Deploy container app with valid parameters
     az containerapp up \
         --name "$container_app_name" \
         --resource-group "$PROJECT_RESOURCE_GROUP" \
@@ -248,8 +239,8 @@ deploy_container_app() {
         --branch "$branch" \
         --registry-server "$registry_url" \
         --ingress external \
-        --target-port 3000 \
-        --service-principal-id "$SP_ID"
+        --target-port 3000
+
 
     # Update container app settings
     log_info "Configuring Container App scaling and resources"
@@ -259,22 +250,20 @@ deploy_container_app() {
         --cpu 0.25 \
         --memory 0.5Gi \
         --min-replicas 1 \
-        --max-replicas 10
+        --max-replicas 10 \
+
+
+    # Optional: Disable public ingress if internal service
+    # az containerapp ingress disable \
+    #     --name "$container_app_name" \
+    #     --resource-group "$PROJECT_RESOURCE_GROUP"
 }
 
 # Main deployment workflow
 main() {
-    # Configuration and setup must happen FIRST
-    initialize_configuration
-    validate_configuration
-
-    # Now safe to use LOG_FOLDER
     local timestamp
     timestamp=$(date +"%Y%m%d_%H%M%S")
     local log_file="${LOG_FOLDER}/deploy_worker_${timestamp}.log"
-
-    # Ensure log directory exists
-    mkdir -p "${LOG_FOLDER}"
 
     # Redirect output to log file and console
     exec > >(tee -a "$log_file") 2>&1
@@ -283,7 +272,6 @@ main() {
 
     # Azure deployment steps
     setup_azure_context
-    setup_service_principal  # Add service principal setup before other Azure resources
     prepare_container_registry
     prepare_container_apps_environment
     deploy_container_app
@@ -292,5 +280,5 @@ main() {
     log_info "Detailed logs available at: $log_file"
 }
 
-# Execute main function with error handling
+# Execute main function
 main "$@"

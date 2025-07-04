@@ -11,7 +11,7 @@ class NotificationEmailService {
             }
         });
     }
-
+//handle for the admin only *
     /**
      * Send transaction notification email
      * @param {Object} data - Transaction data
