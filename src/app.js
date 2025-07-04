@@ -15,6 +15,8 @@ const adminRoutes = require("./authentication/src/routes/admin/admin.routes");
 const kycRoutes = require("./authentication/src/routes/kyc/kyc.routes");
 const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./swagger.config");
+require('../instrument')
+const Sentry = require("@sentry/node")
 // const { validateRegistration, validateLogin } = require("../src/authentication/src/middleware/validation.middleware"); // Import validation middleware
 // const { loginLimiter, apiLimiter, otpLimiter } = require("../src/authentication/src/middleware/rate-limiter"); // Import rate limiting middleware
 
@@ -152,6 +154,10 @@ const createApp = () => {
 
     // Register authentication routes with middleware
     app.use("/api/v1/auth", authRoutes);
+    // apis for the admin
+    app.use("/api/v1/admin", adminRoutes);
+    //apis for document kyc verification
+    app.use("/api/v1/kyc", kycRoutes);
   }
   const corsOptions = {
     origin: [process.env.CORS_ORIGIN, "http://localhost:3000"],
@@ -163,44 +169,8 @@ const createApp = () => {
 
   app.use(cors(corsOptions));
 
-  // apis for the admin
-  app.use("/api/v1/admin", adminRoutes);
-  //apis for document kyc verification
-  app.use("/api/v1/kyc", kycRoutes);
-  //documentation apis
-  // Serve Swagger documentation
-  // app.use(
-  //   "/api-docs",
-  //   swaggerUi.serve,
-  //   swaggerUi.setup(swaggerSpec, {
-  //     explorer: true,
-  //     customCss: ".swagger-ui .topbar { display: none }",
-  //     customSiteTitle: "Neptune Platform API Documentation",
-  //     customfavIcon: "/favicon.ico",
-  //     swaggerOptions: {
-  //       persistAuthorization: true,
-  //       displayRequestDuration: true,
-  //     },
-  //   })
-  // );
 
-  // app.use(
-  //   "/api/v1/webhook",
-  //   bodyParser.raw({ type: "application/json" }),
-  //   (req, res, next) => {
-  //     if (req.rawBody) {
-  //       req.body = JSON.parse(req.rawBody);
-  //     }
-  //     next();
-  //   }
-  // );
 
-  // const webhookRoutes = require("../src/Investment/src/routes/webhooks/webhooks.routes");
-  // app.use("/api/v1/webhook", webhookRoutes);
-
-  /**
-   * Handle 404 errors
-   */
   function notFoundHandler(req, res) {
     res.status(404).json({ error: "Not Found" });
   }
@@ -224,7 +194,7 @@ const createApp = () => {
       // Validate environment variables
       validateEnv();
 
-      // // Database initialization
+      // Database initialization
       // console.log("\n[Database] Initializing database schema...");
       // await setupDatabase();
       // console.log("[Database] Schema initialized successfully");
@@ -240,6 +210,7 @@ const createApp = () => {
       // Error handling
       app.use(notFoundHandler);
       app.use(errorHandler);
+      Sentry.setupExpressErrorHandler(app)
 
       // Development logging
       if (process.env.NODE_ENV === "development") {

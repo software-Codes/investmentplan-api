@@ -1,20 +1,10 @@
-//email otp sending
-/**
- * @file otp-email-service.js
- * @description Service for sending OTP codes via email using nodemailer
- */
+
 
 const nodemailer = require('nodemailer');
 
-/**
- * Email service for sending OTPs
- */
+
 class OtpEmailService {
-    /**
-     * Creates a new transporter instance with the given configuration
-     * @returns {nodemailer.Transporter} Configured nodemailer transporter
-     * @private
-     */
+  
     static _createTransporter() {
         return nodemailer.createTransport({
             service: 'gmail',
@@ -25,19 +15,11 @@ class OtpEmailService {
         });
     }
 
-    /**
-     * Sends an OTP code to the specified email address
-     * @param {string} email - Recipient's email address
-     * @param {string} otpCode - The OTP code to send
-     * @param {string} purpose - The purpose of the OTP (e.g., 'registration', 'login')
-     * @returns {Promise<Object>} The result of the email sending operation
-     * @throws {Error} If the email sending fails
-     */
+ 
     static async sendOtp(email, otpCode, purpose) {
         try {
             const transporter = this._createTransporter();
 
-            // Create a purpose-specific subject and message
             const subject = this._getSubject(purpose);
             const htmlContent = this._getEmailTemplate(otpCode, purpose);
 
@@ -56,12 +38,7 @@ class OtpEmailService {
         }
     }
 
-    /**
-     * Gets the appropriate email subject based on the OTP purpose
-     * @param {string} purpose - The purpose of the OTP
-     * @returns {string} The email subject
-     * @private
-     */
+
     static _getSubject(purpose) {
         switch (purpose.toLowerCase()) {
             case 'registration':
@@ -75,13 +52,7 @@ class OtpEmailService {
         }
     }
 
-    /**
-     * Generates an HTML email template with the OTP code
-     * @param {string} otpCode - The OTP code to include in the email
-     * @param {string} purpose - The purpose of the OTP
-     * @returns {string} HTML content for the email
-     * @private
-     */
+  
     static _getEmailTemplate(otpCode, purpose) {
         let actionText;
 

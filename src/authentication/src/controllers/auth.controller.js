@@ -5,26 +5,13 @@ const { logger } = require("../utils/logger");
 const { validate } = require("express-validation");
 const { error } = require("../utils/response.util");
 const { addTokenToBlacklist } = require("../helpers/blacklist-auth");
-// const smileIDService = require("../services/smile-id-kyc/smile-id.service");
 const AzureBlobStorageService = require("../services/azure-blob-storage-kyc/azure-blob-storage.service");
 const KYCDocument = require("../models/kyc-document.model");
 const Wallet = require("../../../Investment/src/models/wallets/wallets.models");
 
-/**
- * @file auth.service.js
- * @description Authentication service that integrates User and OTP models for a complete auth flow
- */
+
 class AuthController {
-  /**
-   * Register a new user and trigger email/phone verification
-   * @param {Object} userData - User registration data
-   * @param {string} userData.fullName - User's full name
-   * @param {string} userData.email - User's email address
-   * @param {string} userData.phoneNumber - User's phone number
-   * @param {string} userData.password - User's password
-   * @param {string} userData.preferredContactMethod - User's preferred contact method ('email' or 'sms')
-   * @returns {Promise<Object>} Registration result with user data
-   */
+
   static async register(req, res, next) {
     try {
       const userData = req.body;
@@ -99,112 +86,99 @@ class AuthController {
       next(error);
     }
   }
-  /**
-   * Authenticate user credentials and handle OTP verification if required
-   * @param {Object} credentials - User login credentials
-   * @param {string} credentials.email - User's email address
-   * @param {string} credentials.password - User's password
-   * @param {string} [credentials.otpCode] - OTP code (if OTP is required)
-   * @param {string} [credentials.ipAddress] - User's IP address
-   * @param {string} [credentials.userAgent] - User's browser/device information
-   * @returns {Promise<Object>} Authentication result with user data and token
-   */
-// Fixed AuthController login method
-static async login(req, res, next) {
-  try {
-    const credentials = req.body;
-    //find user by email
-    const user = await User.findbyEmail(credentials.email);
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid email or password",
-      });
-    }
-    // Check if the user has verified their account
-    if (!user.email_verified && !user.phone_verified) {
-      return res.status(403).json({
-        success: false,
-        message: "Account not verified. Please verify your account first.",
-        userId: user.user_id,
-        requiresVerification: true,
-      });
-    }
-    // Check if account is active
-    if (user.account_status !== "active") {
-      return res.status(403).json({
-        success: false,
-        message: `Account is ${user.account_status}. Please contact support.`,
-      });
-    }
-    // Verify password
-    const isPasswordValid = await User.validatePassword(
-      credentials.password,
-      user.password_hash
-    );
-    if (!isPasswordValid) {
-      // Increment failed login attempts
-      await User.incrementFailedLoginAttempts(user.user_id);
-      return res.status(401).json({
-        success: false,
-        message: "Invalid email or password",
-      });
-    }
-    // Reset failed login attempts on successful login
-    await User.updateLoginInfo(user.user_id, req.ip);
-    // Create session and return JWT token
-    const session = await User.createSession(user.user_id, {
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
-    //Generate JWT token
-    const token = AuthController.generateJwtToken(
-      user.user_id,
-      session.session_id
-    );
-
-    // Get account completion status
-    const accountCompletion = await User.getAccountCompletionStatus(
-      user.user_id
-    );
-    
-    // FIXED: Return proper data structure that matches frontend expectations
-    return res.status(200).json({
-      success: true,
-      data: {
-        token,
-        user: {
-          userId: user.user_id,
-          fullName: user.full_name,
-          email: user.email,
-          phoneNumber: user.phone_number,
-          preferredContactMethod: user.preferred_contact_method,
-          accountStatus: user.account_status,
-          email_verified: user.email_verified,
-          phone_verified: user.phone_verified,
-        },
-        session: {
-          sessionId: session.session_id,
-          expiresAt: session.expires_at,
-        },
-        accountCompletion,
+ 
+  
+  // Fixed AuthController login method
+  static async login(req, res, next) {
+    try {
+      const credentials = req.body;
+      //find user by email
+      const user = await User.findbyEmail(credentials.email);
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid email or password",
+        });
       }
-    });
-  } catch (error) {
-    console.error("Login error:", error);
-    res.status(500).json({
-      success: false,
-      message: `Error occurred during login ${error.message}`,
-    });
+      // Check if the user has verified their account
+      if (!user.email_verified && !user.phone_verified) {
+        return res.status(403).json({
+          success: false,
+          message: "Account not verified. Please verify your account first.",
+          userId: user.user_id,
+          requiresVerification: true,
+        });
+      }
+      // Check if account is active
+      if (user.account_status !== "active") {
+        return res.status(403).json({
+          success: false,
+          message: `Account is ${user.account_status}. Please contact support.`,
+        });
+      }
+      // Verify password
+      const isPasswordValid = await User.validatePassword(
+        credentials.password,
+        user.password_hash
+      );
+      if (!isPasswordValid) {
+        // Increment failed login attempts
+        await User.incrementFailedLoginAttempts(user.user_id);
+        return res.status(401).json({
+          success: false,
+          message: "Invalid email or password",
+        });
+      }
+      // Reset failed login attempts on successful login
+      await User.updateLoginInfo(user.user_id, req.ip);
+      // Create session and return JWT token
+      const session = await User.createSession(user.user_id, {
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+      //Generate JWT token
+      const token = AuthController.generateJwtToken(
+        user.user_id,
+        session.session_id
+      );
+
+      // Get account completion status
+      const accountCompletion = await User.getAccountCompletionStatus(
+        user.user_id
+      );
+
+      // FIXED: Return proper data structure that matches frontend expectations
+      return res.status(200).json({
+        success: true,
+        data: {
+          token,
+          user: {
+            userId: user.user_id,
+            fullName: user.full_name,
+            email: user.email,
+            phoneNumber: user.phone_number,
+            preferredContactMethod: user.preferred_contact_method,
+            accountStatus: user.account_status,
+            email_verified: user.email_verified,
+            phone_verified: user.phone_verified,
+          },
+          session: {
+            sessionId: session.session_id,
+            expiresAt: session.expires_at,
+          },
+          accountCompletion,
+        }
+        
+      });
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({
+        success: false,
+        message: `Error occurred during login ${error.message}`,
+      });
+    }
   }
-}
-  /**
-   * Resend verification OTP for a user who hasn't verified yet
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   * @param {Function} next - Express next middleware function
-   * @returns {Promise<void>}
-   */
+ 
   static async resendVerification(req, res, next) {
     try {
       const { userId } = req.body;
@@ -216,7 +190,6 @@ static async login(req, res, next) {
         });
       }
 
-      // Find user
       const user = await User.findById(userId);
       if (!user) {
         return res.status(404).json({
@@ -225,7 +198,6 @@ static async login(req, res, next) {
         });
       }
 
-      // Check if already verified
       if (user.email_verified || user.phone_verified) {
         return res.status(400).json({
           success: false,
@@ -233,7 +205,6 @@ static async login(req, res, next) {
         });
       }
 
-      // Generate new OTP
       const otpData = {
         userId: user.user_id,
         purpose: "registration",
@@ -260,18 +231,10 @@ static async login(req, res, next) {
     }
   }
 
-  /**
-   * Verify OTP code for login or other operations
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   * @param {Function} next - Express next middleware function
-   * @returns {Promise<Object>} Verification result with token and session
-   */
   static async verifyOtp(req, res, next) {
     try {
       const { userId, otpCode, purpose } = req.body;
 
-      // Verify OTP using the OTP model
       const isVerified = await OTP.verify({
         userId,
         otpCode,
@@ -285,7 +248,6 @@ static async login(req, res, next) {
         });
       }
 
-      // Find user
       const user = await User.findById(userId);
       if (!user) {
         return res.status(404).json({
@@ -294,16 +256,13 @@ static async login(req, res, next) {
         });
       }
 
-      // Handle different OTP purposes
       if (purpose === "registration") {
-        // Update verification status based on preferred contact method
         if (user.preferred_contact_method === "email") {
           await User.updateVerificationStatus(userId, "email_verified", true);
         } else {
           await User.updateVerificationStatus(userId, "phone_verified", true);
         }
 
-        // Update account status to active
         await User.updateAccountStatus(userId, "active");
 
         return res.status(200).json({
@@ -319,8 +278,7 @@ static async login(req, res, next) {
           },
         });
       } else if (purpose === "reset_password") {
-        // Generate a temporary token for password reset
-        const tempToken = this.generateJwtToken(userId, null, 300); // 5-minute token
+        const tempToken = this.generateJwtToken(userId, null, 300); 
 
         return res.status(200).json({
           success: true,
@@ -332,7 +290,6 @@ static async login(req, res, next) {
           },
         });
       } else {
-        // For other purposes like login, create a session and generate a token
         const session = await User.createSession(user.user_id, {
           ipAddress: req.ip,
           userAgent: req.headers["user-agent"],
@@ -340,7 +297,6 @@ static async login(req, res, next) {
 
         const token = this.generateJwtToken(user.user_id, session.session_id);
 
-        // Get account completion status
         const accountCompletion = await User.getAccountCompletionStatus(
           user.user_id
         );
@@ -374,26 +330,18 @@ static async login(req, res, next) {
       });
     }
   }
-  /**
-   * Logout user by invalidating session
-   * @param {string} sessionId - Session ID to invalidate
-   * @returns {Promise<Object>} Logout result
-   */
-  // Update AuthController.logout method
+
   static async logout(req, res, next) {
     try {
       const sessionId = req.user.sessionId;
       const token = req.token;
 
-      // Invalidate the session in the database
       const isInvalidated = await User.invalidateSession(sessionId);
 
-      // Calculate token expiry time (default to 1 hour)
       const tokenExp = req.user.exp
         ? req.user.exp - Math.floor(Date.now() / 1000)
         : 3600;
 
-      // Add token to blacklist with expiry
       addTokenToBlacklist(token, tokenExp);
 
       if (!isInvalidated) {
@@ -406,38 +354,27 @@ static async login(req, res, next) {
         });
       }
 
-      // Log successful logout
       logger.info(
         `User ${req.user.userId} logged out successfully. Session ID: ${sessionId}`
       );
 
-      // Notify the user of successful logout
       return res.status(200).json({
         success: true,
         message: "You have been logged out successfully.",
       });
     } catch (error) {
-      // Log the error for developer alert
       logger.error(
-        `Logout error for user ${req.user?.userId || "unknown"}: ${
-          error.message
+        `Logout error for user ${req.user?.userId || "unknown"}: ${error.message
         }`,
         { error }
       );
 
-      // Notify the user of an internal server error
       return res.status(500).json({
         success: false,
         message: "An error occurred while logging out. Please try again later.",
       });
     }
   }
-  /**
-   * Logout from all sessions except current one
-   * @param {string} userId - User's unique ID
-   * @param {string} currentSessionId - Current session ID to preserve
-   * @returns {Promise<Object>} Logout result with count of invalidated sessions
-   */
   static async logoutAllDevices(req, res, next) {
     try {
       const userId = req.user.userId;
@@ -459,17 +396,9 @@ static async login(req, res, next) {
     }
   }
 
-  /**
-   * Initiate password recovery process
-   * @param {Object} recoveryData - Recovery initiation data
-   * @param {string} recoveryData.email - User's email address
-   * @param {string} [recoveryData.phoneNumber] - User's phone number
-   * @param {string} recoveryData.method - Recovery method ('email' or 'sms')
-   * @returns {Promise<Object>} Recovery initiation result
-   */
+
   static async initiateRecovery(recoveryData) {
     try {
-      // Find user by email or phone number
       let user;
       if (recoveryData.email) {
         user = await User.findbyEmail(recoveryData.email);
@@ -481,14 +410,12 @@ static async login(req, res, next) {
         throw new Error("No account found with the provided information");
       }
 
-      // Check if account is active
       if (user.account_status !== "active") {
         throw new Error(
           `Account is ${user.account_status}. Please contact support.`
         );
       }
 
-      // Generate OTP for recovery
       const otpData = {
         userId: user.user_id,
         purpose: "reset_password",
@@ -519,18 +446,9 @@ static async login(req, res, next) {
     }
   }
 
-  /**
-   * Complete password recovery by verifying OTP and setting new password
-   * @param {Object} recoveryData - Recovery completion data
-   * @param {string} recoveryData.userId - User's unique ID
-   * @param {string} recoveryData.otpCode - OTP code received by the user
-   * @param {string} recoveryData.newPassword - New password to set
-   * @param {string} [recoveryData.ipAddress] - User's IP address
-   * @returns {Promise<Object>} Recovery completion result
-   */
+
   static async completeRecovery(recoveryData) {
     try {
-      // Verify OTP
       const isVerified = await OTP.verify({
         otpCode: recoveryData.otpCode,
         purpose: "reset_password",

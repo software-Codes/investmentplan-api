@@ -1,111 +1,213 @@
-const { pool, query } = require("../../Config/neon-database");
-const { v4: uuidv4 } = require("uuid");
-const bcrypt = require("bcrypt");
-const { logger } = require("../../utils/logger");
+// models/Admin.js
+const { pool } = require('../../Config/neon-database');
+const bcrypt = require('bcrypt');
+const { v4: uuidv4 } = require('uuid');
+const { logger } = require('../../utils/logger');
+
 
 class Admin {
+  constructor() {
+    this.tableName = 'admins';
+    this.saltRounds = 12;
+  }
+
+  /**
+   * Create new admin account
+   * Algorithm: Database Transaction with Password Hashing
+   * Time Complexity: O(1) - Single insert operation
+   * Space Complexity: O(1) - Fixed memory usage
+   */
   static async create(adminData) {
-    const adminId = uuidv4();
-    const currentDate = new Date().toISOString();
-    const hashedPassword = await bcrypt.hash(adminData.password, 10);
-
-    const queryText = `
-      INSERT INTO admins (
-        admin_id,
-        full_name,
-        email,
-        password_hash,
-        role,
-        created_at,
-        updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-      RETURNING *
-    `;
-
-    const values = [
-      adminId,
-      adminData.fullName,
-      adminData.email.toLowerCase(),
-      hashedPassword,
-      adminData.role || 'admin',
-      currentDate,
-      currentDate
-    ];
+    const client = await pool.connect();
 
     try {
-      const res = await query(queryText, values);
-      return res.rows[0];
+      await client.query('BEGIN');
+
+      const adminId = uuidv4();
+      const currentTimestamp = new Date().toISOString();
+
+      const passwordHash = await bcrypt.hash(adminData.password, 12);
+
+      const queryText = `
+        INSERT INTO admins (
+          admin_id,
+          full_name,
+          email,
+          password_hash,
+          role,
+          created_at,
+          updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $6)
+        RETURNING admin_id, full_name, email, role, created_at, updated_at
+      `;
+
+      const values = [
+        adminId,
+        adminData.fullName.trim(),
+        adminData.email.toLowerCase().trim(),
+        passwordHash,
+        adminData.role || 'admin',
+        currentTimestamp
+      ];
+
+      const result = await client.query(queryText, values);
+
+      await client.query('COMMIT');
+
+      logger.info(`Admin created successfully`, {
+        adminId,
+        email: adminData.email,
+        role: adminData.role
+      });
+
+      return result.rows[0];
+
     } catch (error) {
+      await client.query('ROLLBACK');
       logger.error(`Failed to create admin: ${error.message}`);
-      throw new Error('Failed to create admin account');
+      throw error;
+    } finally {
+      client.release();
     }
   }
+
 
   static async findByEmail(email) {
-    const queryText = 'SELECT * FROM admins WHERE email = $1';
-    const res = await query(queryText, [email.toLowerCase()]);
-    return res.rows[0];
+    try {
+      const queryText = `
+        SELECT admin_id, full_name, email, password_hash, role, 
+               is_active, created_at, updated_at
+        FROM admins 
+        WHERE email = $1 AND is_active = true
+      `;
+
+      const result = await pool.query(queryText, [email.toLowerCase().trim()]);
+
+      return result.rows[0] || null;
+
+    } catch (error) {
+      logger.error(`Failed to find admin by email: ${error.message}`);
+      throw error;
+    }
   }
 
-  static async validatePassword(password, hashedPassword) {
-    return bcrypt.compare(password, hashedPassword);
+
+  static async validateCredentials(email, password) {
+    try {
+      const admin = await this.findByEmail(email);
+
+      if (!admin) {
+        return { isValid: false, admin: null };
+      }
+
+      const isPasswordValid = await bcrypt.compare(password, admin.password_hash);
+
+      if (!isPasswordValid) {
+        return { isValid: false, admin: null };
+      }
+
+      const { password_hash, ...adminWithoutPassword } = admin;
+
+      return { isValid: true, admin: adminWithoutPassword };
+
+    } catch (error) {
+      logger.error(`Failed to validate admin credentials: ${error.message}`);
+      throw error;
+    }
   }
 
-  static async findById(adminId) {
-    const queryText = 'SELECT * FROM admins WHERE admin_id = $1';
-    const res = await query(queryText, [adminId]);
-    return res.rows[0];
-  }
-  static async createSuperAdmin(adminData) {
-    const adminId = uuidv4();
-    const currentDate = new Date().toISOString();
-    const hashedPassword = await bcrypt.hash(adminData.password, 10);
 
+
+
+  static async updatePassword(adminId, newPassword) {
+    try {
+      const passwordHash = await bcrypt.hash(newPassword, 12);
+      const currentTimestamp = new Date().toISOString();
+
+      const queryText = `
+        UPDATE admins 
+        SET password_hash = $1, updated_at = $2
+        WHERE admin_id = $3 AND is_active = true
+        RETURNING admin_id, full_name, email, role, updated_at
+      `;
+
+      const result = await pool.query(queryText, [
+        passwordHash,
+        currentTimestamp,
+        adminId
+      ]);
+
+      if (result.rows.length === 0) {
+        throw new Error('Admin not found or inactive');
+      }
+
+      logger.info(`Admin password updated successfully`, { adminId });
+
+      return result.rows[0];
+
+    } catch (error) {
+      logger.error(`Failed to update admin password: ${error.message}`);
+      throw error;
+    }
+  }
+
+
+static async findById(adminId) {
+  try {
     const queryText = `
-      INSERT INTO admins (
-        admin_id,
-        full_name,
-        email,
-        password_hash,
-        role,
-        is_super_admin,
-        created_at,
-        updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING *
+      SELECT admin_id, full_name, email, password_hash, role, is_active, created_at, updated_at
+      FROM admins 
+      WHERE admin_id = $1 AND is_active = true
     `;
 
-    const values = [
-      adminId,
-      adminData.fullName,
-      adminData.email.toLowerCase(),
-      hashedPassword,
-      'super_admin',
-      true,
-      currentDate,
-      currentDate
-    ];
+    const result = await pool.query(queryText, [adminId]);
+    return result.rows[0] || null;
 
+  } catch (error) {
+    logger.error(`Failed to find admin by ID: ${error.message}`);
+    throw error;
+  }
+}
+
+
+  static async updateProfile(adminId, fields) {
+    const allowed = ['full_name'];
+    const updates = Object.entries(fields).filter(([key]) => allowed.includes(key));
+
+    if (updates.length === 0) return null;
+
+    const setClause = updates.map(([k], i) => `${k} = $${i + 1}`).join(', ');
+    const values = updates.map(([, v]) => v);
+    values.push(adminId); // for WHERE clause
+
+    const sql = `
+    UPDATE admins
+    SET ${setClause}, updated_at = NOW()
+    WHERE admin_id = $${values.length}
+    RETURNING admin_id, full_name, email, updated_at
+  `;
+
+    const result = await pool.query(sql, values);
+    return result.rows[0];
+  }
+
+  static async updateFullName(adminId, fullName) {
+    const queryText = `
+    UPDATE admins 
+    SET full_name = $1, updated_at = NOW()
+    WHERE admin_id = $2 AND is_active = true
+    RETURNING admin_id, full_name, updated_at
+  `;
     try {
-      const res = await query(queryText, values);
-      const { password_hash, ...adminWithoutPassword } = res.rows[0];
-      return adminWithoutPassword;
+      const result = await pool.query(queryText, [fullName.trim(), adminId]);
+      return result.rows[0];
     } catch (error) {
-      logger.error(`Failed to create super admin: ${error.message}`);
-      throw new Error('Failed to create super admin account');
+      logger.error(`Failed to update admin full name: ${error.message}`);
+      throw error;
     }
   }
 
-  static async isSuperAdmin(adminId) {
-    try {
-      const queryText = 'SELECT is_super_admin FROM admins WHERE admin_id = $1';
-      const res = await query(queryText, [adminId]);
-      return res.rows[0]?.is_super_admin || false;
-    } catch (error) {
-      logger.error(`Failed to check super admin status: ${error.message}`);
-      return false;
-    }
-  }
+
 }
 
 module.exports = Admin;

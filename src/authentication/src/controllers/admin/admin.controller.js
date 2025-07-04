@@ -1,345 +1,295 @@
-/**
- * @file admin.controller.js
- * @description Controller for admin-related operations, including managing users, retrieving user details, and performing administrative actions.
- */
+const Admin = require('../../models/admin/Admin');
+const OTP = require('../../models/otp.model');
+const { logger } = require('../../utils/logger');
+const { success, error, STATUS_CODES } = require('../../utils/response.util');
+const { generateAdminToken } = require('../../utils/admin/token.util')
+const bcrypt = require('bcrypt')
 
-const User = require("../../models/user.model");
-const Admin = require("../../models/admin/Admin");
-const jwt = require("jsonwebtoken");
 
 class AdminController {
+
   /**
-   * Registers a new admin user.
-   *
-   * This function validates the provided admin data, checks if an admin with the same email already exists,
-   * and creates a new admin account if the email is not already registered.
-   *
-   * @param {Object} req - Express request object.
-   * @param {Object} res - Express response object.
-   * @param {Function} next - Express next middleware function.
-   * @returns {Promise<void>} Sends a JSON response containing the newly created admin's details and a success message.
-   *
-   * @throws {Error} Throws an error if the password is missing, the email is already registered, or if an unexpected error occurs.
+   * Admin Registration
+   * Algorithm: Input Validation → Uniqueness Check → Database Transaction
+   * Time Complexity: O(1) - Fixed database operations
+   * Space Complexity: O(1) - Fixed memory allocation
    */
-  static async registerAdmin(req, res, next) {
+  static async register(req, res, next) {
     try {
-      const adminData = req.body;
+      // Input validation and sanitization
+      const { fullName, email, password, role } = req.body;
 
-      // Validate that a password is provided
-      if (!adminData.password) {
-        return next(new Error("Password is required"));
+      if (!fullName || !email || !password) {
+        return res.status(STATUS_CODES.BAD_REQUEST).json(
+          error(new Error('Missing required fields'), 'Full name, email, and password are required', STATUS_CODES.BAD_REQUEST)
+        );
       }
 
-      // Check if an admin with the same email already exists
-      const existingAdmin = await Admin.findByEmail(adminData.email);
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(STATUS_CODES.BAD_REQUEST).json(
+          error(new Error('Invalid email format'), 'Please provide a valid email address', STATUS_CODES.BAD_REQUEST)
+        );
+      }
+
+      if (password.length < 8) {
+        return res.status(STATUS_CODES.BAD_REQUEST).json(
+          error(new Error('Weak password'), 'Password must be at least 8 characters long', STATUS_CODES.BAD_REQUEST)
+        );
+      }
+
+      const existingAdmin = await Admin.findByEmail(email);
       if (existingAdmin) {
-        return res.status(400).json({
-          success: false,
-          message: "Admin user already exists",
-        });
+        return res.status(STATUS_CODES.BAD_REQUEST).json(
+          error(new Error('Admin exists'), 'An admin with this email already exists', STATUS_CODES.BAD_REQUEST)
+        );
       }
 
-      // Create a new admin account
+
+      // Create admin account
+      const adminData = {
+        fullName: fullName.trim(),
+        email: email.toLowerCase().trim(),
+        password,
+        role: role || 'admin'
+      };
+
       const newAdmin = await Admin.create(adminData);
 
-      // Respond with the newly created admin's details
-      return res.status(201).json({
-        success: true,
-        admin: {
-          adminId: newAdmin.admin_id,
-          fullName: newAdmin.full_name,
-          email: newAdmin.email,
-        },
-        message: "Admin registered successfully",
+
+
+      logger.info('Admin registration successful', {
+        adminId: newAdmin.admin_id,
+        email: newAdmin.email,
+        role: newAdmin.role
       });
+
+      return res.status(STATUS_CODES.CREATED).json(
+        success(
+          {
+            adminId: newAdmin.admin_id,
+            fullName: newAdmin.full_name,
+            email: newAdmin.email,
+            role: newAdmin.role,
+            createdAt: newAdmin.created_at
+          },
+          'Admin account created successfully.',
+          STATUS_CODES.CREATED
+        )
+      );
+
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        message: `Failed to register admin${error.message}`,
-      });
-      // Pass any errors to the next middleware
+      logger.error('Admin registration failed', { error: error.message });
       next(error);
     }
   }
+
   /**
-   * Authenticates an admin user and generates a JWT token.
-   *
-   * This function validates the provided email and password, checks if the admin exists,
-   * verifies the password, and generates a JWT token for the authenticated admin.
-   *
-   * @param {Object} req - Express request object.
-   * @param {Object} res - Express response object.
-   * @param {Function} next - Express next middleware function.
-   * @returns {Promise<void>} Sends a JSON response containing the JWT token and admin details if authentication is successful.
-   *
-   * @throws {Error} Throws an error if the email or password is invalid, or if an unexpected error occurs.
+   * Admin Login
+   * Algorithm: Credential Validation → OTP Generation → Response
+   * Time Complexity: O(1) - Fixed validation steps
+   * Space Complexity: O(1) - Fixed memory allocation
    */
-  static async adminLogin(req, res, next) {
+  static async login(req, res, next) {
     try {
-        const { email, password } = req.body;
+      const { email, password } = req.body;
 
-        if (!email || !password) {
-            return res.status(400).json({
-                success: false,
-                message: "Email and password are required",
-            });
-        }
-
-        // Find admin by email
-        const admin = await Admin.findByEmail(email);
-        if (!admin) {
-            return res.status(401).json({
-                success: false,
-                message: "Invalid email or password",
-            });
-        }
-
-        // Verify password
-        const isPasswordValid = await Admin.validatePassword(password, admin.password_hash);
-        if (!isPasswordValid) {
-            return res.status(401).json({
-                success: false,
-                message: "Invalid email or password",
-            });
-        }
-
-        // Generate JWT token
-        const token = jwt.sign(
-            { adminId: admin.admin_id, email: admin.email },
-            process.env.JWT_SECRET,
-            { expiresIn: '7d' }
+      // ─── Basic input guard ────────────────────────────────
+      if (!email || !password) {
+        return res.status(STATUS_CODES.BAD_REQUEST).json(
+          error(
+            new Error('Missing credentials'),
+            'Email and password are required',
+            STATUS_CODES.BAD_REQUEST
+          )
         );
+      }
 
-        return res.status(200).json({
-            success: true,
-            token,
+      // ─── Credential check ────────────────────────────────
+      const { isValid, admin } = await Admin.validateCredentials(email, password);
+
+      if (!isValid) {
+        return res.status(STATUS_CODES.UNAUTHORIZED).json(
+          error(
+            new Error('Invalid credentials'),
+            'Invalid email or password',
+            STATUS_CODES.UNAUTHORIZED
+          )
+        );
+      }
+
+      // ─── Token generation ────────────────────────────────
+      const token = generateAdminToken(admin);
+
+      logger.info('Admin login successful', { adminId: admin.admin_id, email: admin.email });
+
+      return res.status(STATUS_CODES.OK).json(
+        success(
+          {
+            token,                               // <-- Bearer token
             admin: {
-                adminId: admin.admin_id,
-                fullName: admin.full_name,
-                email: admin.email,
-            },
-        });
-    } catch (error) {
-        next(error);
+              adminId: admin.admin_id,
+              fullName: admin.full_name,
+              email: admin.email,
+              role: admin.role
+            }
+          },
+          'Login successful',
+          STATUS_CODES.OK
+        )
+      );
+
+    } catch (err) {
+      logger.error('Admin login failed', { error: err.message });
+      next(err);
     }
-}
+  }
+
   /**
-   * Logs out a specific user by invalidating their session.
-   *
-   * @param {Object} req - Express request object.
-   * @param {Object} res - Express response object.
-   * @param {Function} next - Express next middleware function.
-   * @returns {Promise<void>} Sends a JSON response indicating the success or failure of the operation.
-   *
-   * @throws {Error} Throws an error if the session invalidation fails or if an unexpected error occurs.
+   * Password Reset Request
+   * Algorithm: Email Validation → OTP Generation → Response
+   * Time Complexity: O(1) - Fixed validation steps
+   * Space Complexity: O(1) - Fixed memory allocation
    */
-  static async logoutUser(req, res, next) {
+  static async requestPasswordReset(req, res, next) {
     try {
-      const { userId, sessionId } = req.body;
+      const { email } = req.body;
 
-      // Invalidate the user's session
-      const isInvalidated = await User.invalidateSession(sessionId);
-
-      if (!isInvalidated) {
-        return res.status(404).json({
-          success: false,
-          message: "Session not found or already invalidated",
-        });
+      // Validate email
+      if (!email) {
+        return res.status(STATUS_CODES.BAD_REQUEST).json(
+          error(new Error('Missing email'), 'Email is required for password reset', STATUS_CODES.BAD_REQUEST)
+        );
       }
 
-      return res.status(200).json({
-        success: true,
-        message: "User logged out successfully",
+      // Check if admin exists
+      const admin = await Admin.findByEmail(email);
+      if (!admin) {                         // don’t leak existence
+        return res.status(STATUS_CODES.OK).json(
+          success(null, 'If this email exists, you will receive a reset code', STATUS_CODES.OK)
+        );
+      }
+      await OTP.generate({
+        email: admin.email,
+        purpose: 'reset_password',
+        delivery: 'email'
       });
-    } catch (error) {
-      next(error);
-    }
+
+      logger.info('Password reset OTP sent', {
+        adminId: admin.admin_id,
+        email: admin.email
+      });
+
+      logger.info('Reset OTP sent', { adminId: admin.admin_id, email: admin.email });
+      return res.status(STATUS_CODES.OK).json(
+        success(null, 'Password-reset code sent to your email', STATUS_CODES.OK)
+      );
+
+    } catch (err) { next(err); }
   }
 
   /**
-   * Deletes a user's account and all associated data.
-   *
-   * @param {Object} req - Express request object.
-   * @param {Object} res - Express response object.
-   * @param {Function} next - Express next middleware function.
-   * @returns {Promise<void>} Sends a JSON response indicating the success or failure of the operation.
-   *
-   * @throws {Error} Throws an error if the account deletion fails or if an unexpected error occurs.
+   * Reset Password
+   * Algorithm: OTP Validation → Password Update → Response
+   * Time Complexity: O(1) - Fixed validation and update steps
+   * Space Complexity: O(1) - Fixed memory allocation
    */
-  static async deleteUser(req, res, next) {
+  // controllers/admin/admin.controller.js
+  static async resetPassword(req, res, next) {
     try {
-      const { userId, password } = req.body;
+      const { email, otpCode, newPassword } = req.body;
 
-      // Delete the user's account
-      const isDeleted = await User.deleteAccount(userId, password);
-      if (!isDeleted) {
-        return res.status(404).json({
-          success: false,
-          message: "Failed to delete account",
-        });
+      if (!email || !otpCode || !newPassword) {
+        return res.status(STATUS_CODES.BAD_REQUEST).json(
+          error(new Error('Missing fields'), 'Email, OTP code, and new password are required', STATUS_CODES.BAD_REQUEST)
+        );
       }
 
-      return res.status(200).json({
-        success: true,
-        message: "Account deleted successfully",
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * Retrieves detailed information about a specific user.
-   *
-   * @param {Object} req - Express request object.
-   * @param {Object} res - Express response object.
-   * @param {Function} next - Express next middleware function.
-   * @returns {Promise<void>} Sends a JSON response containing the user's details, wallet balances, and account completion status.
-   *
-   * @throws {Error} Throws an error if the user is not found or if an unexpected error occurs.
-   */
-  static async getUserDetails(req, res, next) {
-    try {
-      const { userId } = req.params;
-
-      // Retrieve the user's details
-      const user = await User.findById(userId);
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found",
-        });
+      if (newPassword.length < 8) {
+        return res.status(STATUS_CODES.BAD_REQUEST).json(
+          error(new Error('Weak password'), 'New password must be at least 8 characters long', STATUS_CODES.BAD_REQUEST)
+        );
       }
 
-      // Retrieve wallet balances and account completion status
-      const walletBalances = await User.getWalletBalances(userId);
-      const accountCompletion = await User.getAccountCompletionStatus(userId);
-
-      return res.status(200).json({
-        success: true,
-        user: {
-          userId: user.user_id,
-          fullName: user.full_name,
-          email: user.email,
-          phoneNumber: user.phone_number,
-          preferredContactMethod: user.preferred_contact_method,
-          accountStatus: user.account_status,
-          emailVerified: user.email_verified,
-          phoneVerified: user.phone_verified,
-          createdAt: user.created_at,
-          lastLogin: user.last_login_at,
-        },
-        walletBalances,
-        accountCompletion,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * Retrieves a list of all users in the system.
-   *
-   * @param {Object} req - Express request object.
-   * @param {Object} res - Express response object.
-   * @param {Function} next - Express next middleware function.
-   * @returns {Promise<void>} Sends a JSON response containing a list of all users.
-   *
-   * @throws {Error} Throws an error if the query fails or if an unexpected error occurs.
-   */
-  static async getAllUsers(req, res, next) {
-    try {
-      const queryText = `
-        SELECT 
-          user_id, 
-          full_name, 
-          email, 
-          phone_number, 
-          preferred_contact_method, 
-          email_verified, 
-          phone_verified, 
-          account_status, 
-          created_at, 
-          last_login_at
-        FROM users;
-      `;
-
-      // Execute the query to retrieve all users
-      const result = await query(queryText);
-      return res.status(200).json({
-        success: true,
-        users: result.rows,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  //get admin profile
-  static async getAdminProfile(req, res, next) {
-    try {
-      const admin = await Admin.findById(req.admin.adminId);
+      const admin = await Admin.findByEmail(email);
       if (!admin) {
-        return res.status(404).json({
-          success: false,
-          message: "Admin not found"
-        });
+        return res.status(STATUS_CODES.NOT_FOUND).json(
+          error(new Error('Admin not found'), 'No admin found with this email', STATUS_CODES.NOT_FOUND)
+        );
       }
-  
-      return res.status(200).json({
-        success: true,
-        admin: {
-          adminId: admin.admin_id,
-          fullName: admin.full_name,
-          email: admin.email,
-          role: admin.role,
-          createdAt: admin.created_at
+
+      const isValidOtp = await OTP.verify({
+        email: admin.email,
+        code: otpCode,
+        purpose: 'reset_password'
+      });
+
+      if (!isValidOtp) {
+        return res.status(STATUS_CODES.BAD_REQUEST).json(
+          error(new Error('Invalid OTP'), 'The OTP code is invalid or expired', STATUS_CODES.BAD_REQUEST)
+        );
+      }
+
+      const updated = await Admin.updatePassword(admin.admin_id, newPassword);
+
+      return res.status(STATUS_CODES.OK).json(
+        success(
+          {
+            adminId: updated.admin_id,
+            email: updated.email,
+            updatedAt: updated.updated_at
+          },
+          'Your password has been reset successfully',
+          STATUS_CODES.OK
+        )
+      );
+    } catch (err) {
+      logger.error('Password reset failed', { error: err.message });
+      next(err);
+    }
+  }
+
+
+
+  static async updateAdminDetails(req, res, next) {
+    try {
+      const adminId = req.admin?.adminId; // from JWT
+      const { fullName, currentPassword, newPassword } = req.body;
+
+      const admin = await Admin.findById(adminId);
+      if (!admin) {
+        return res.status(STATUS_CODES.NOT_FOUND).json(
+          error(new Error('Admin not found'), 'Admin not found', STATUS_CODES.NOT_FOUND)
+        );
+      }
+
+      // If password update is requested
+      if (currentPassword && newPassword) {
+        const isPasswordValid = await bcrypt.compare(currentPassword, admin.password_hash);
+        if (!isPasswordValid) {
+          return res.status(STATUS_CODES.UNAUTHORIZED).json(
+            error(new Error('Invalid current password'), 'Current password is incorrect', STATUS_CODES.UNAUTHORIZED)
+          );
         }
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-  //get user documents
-  static async getUserDocuments(req, res, next) {
-    try {
-      const { userId } = req.params;
-      const documents = await KYCDocument.findByUserId(userId);
-  
-      return res.status(200).json({
-        success: true,
-        documents: documents.map(doc => ({
-          id: doc.document_id,
-          type: doc.document_type,
-          url: doc.blob_storage_url,
-          uploadedAt: doc.uploaded_at
-        }))
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-  static async updateUserStatus(req, res, next) {
-    try {
-      const { userId, status } = req.body;
-      
-      if (!['active', 'suspended', 'deactivated'].includes(status)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid status value"
-        });
+
+        await Admin.updatePassword(adminId, newPassword);
       }
-  
-      await User.updateAccountStatus(userId, status);
-  
-      return res.status(200).json({
-        success: true,
-        message: `User status updated to ${status}`
-      });
-    } catch (error) {
-      next(error);
+
+      // If fullName update is requested
+      if (fullName) {
+        await Admin.updateFullName(adminId, fullName);
+      }
+
+      return res.status(STATUS_CODES.OK).json(
+        success({ adminId }, 'Admin profile updated successfully', STATUS_CODES.OK)
+      );
+    } catch (err) {
+      next(err);
     }
   }
+
+
+
 }
 
 module.exports = AdminController;

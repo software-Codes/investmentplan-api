@@ -1,37 +1,18 @@
-// # Users table schema
-/**
- * @file user.model.js
- * @description User model for the investment platform with comprehensive schema for authentication and account management
- */
 
 const { pool, query } = require("../Config/neon-database");
 const { v4: uuidv4 } = require("uuid");
 const bcrypt = require("bcrypt");
-// const AzureBlobStorageService = require("../services/azure-blob-storage-kyc/azure-blob-storage.service");
-// const SmileIDService = require("../services/smile-id-kyc/smile-id.service");
+
 const { logger } = require("../utils/logger");
 const Wallet = require("../../../Investment/src/models/wallets/wallets.models");
-/**
- * User model - Handles all user-related database operations
- */
+
 class User {
-  /**
-   * Create a new user in the database
-   * @param {Object} userData - User data for registration
-   * @param {string} userData.fullName - User's full name
-   * @param {string} userData.email - User's email address
-   * @param {string} userData.phoneNumber - User's phone number
-   * @param {string} userData.password - User's password (will be hashed)
-   * @param {string} userData.preferredContactMethod - User's preferred contact method (email/phone)
-   * @returns {Promise<Object>} Created user object (without password)
-   * @throws {Error} If user creation fails
-   */
+
 
   static async create(userData) {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      // First create the user
       const userId = uuidv4();
       const currentDate = new Date().toISOString();
       const saltRounds = 10;
@@ -59,7 +40,6 @@ class User {
         currentDate,
       ];
       const userResult = await client.query(userQueryText, userValues);
-      // Then create the wallets
       const walletTypes = ["account", "trading", "referral"];
       for (const type of walletTypes) {
         await client.query(
@@ -87,11 +67,6 @@ class User {
     }
   }
 
-  /**
-   * Find a user by their email address
-   * @param {string} email - User's email address
-   * @returns {Promise<Object|null>} User object if found, null otherwise
-   */
 
   static async findbyEmail(email) {
     const queryText = `
@@ -115,11 +90,7 @@ class User {
     const res = await query(queryText, [email.toLowerCase()]);
     return res.rows[0] || null;
   }
-  /**
-   * Find a user by their phone number
-   * @param {string} phoneNumber - User's phone number
-   * @returns {Promise<Object|null>} User object if found, null otherwise
-   */
+
   static async findByPhoneNumber(phoneNumber) {
     const queryText = `
       SELECT 
@@ -143,11 +114,7 @@ class User {
     const res = await query(queryText, [phoneNumber]);
     return res.rows[0] || null;
   }
-  /**
-   * Find a user by their ID
-   * @param {string} userId - User's UUID
-   * @returns {Promise<Object|null>} User object if found, null otherwise
-   */
+
   static async findById(userId) {
     const queryText = `
           SELECT 
@@ -171,13 +138,7 @@ class User {
     return res.rows[0] || null;
   }
 
-  /**
-   * Update a user's verification status
-   * @param {string} userId - User's UUID
-   * @param {string} field - Field to update ('email_verified' or 'phone_verified')
-   * @param {boolean} value - New verification status
-   * @returns {Promise<Object>} Updated user object
-   */
+
   static async updateVerificationStatus(userId, field, value) {
     const validFields = ["email_verified", "phone_verified"];
     if (!validFields.includes(field)) {
@@ -211,12 +172,7 @@ class User {
 
     return res.rows[0];
   }
-  /**
-   * Update a user's account status
-   * @param {string} userId - User's UUID
-   * @param {string} status - New account status ('pending', 'active', 'suspended', 'deactivated')
-   * @returns {Promise<Object>} Updated user object
-   */
+
   static async updateAccountStatus(userId, status) {
     const validStatuses = ["pending", "active", "suspended", "deactivated"];
     if (!validStatuses.includes(status)) {
@@ -250,12 +206,7 @@ class User {
 
     return res.rows[0];
   }
-  /**
-   * Update a user's login information after successful login
-   * @param {string} userId - User's UUID
-   * @param {string} ipAddress - User's IP address
-   * @returns {Promise<void>}
-   */
+
   static async updateLoginInfo(userId, ipAddress) {
     const queryText = `
       UPDATE users 
@@ -270,11 +221,7 @@ class User {
     const currentDate = new Date().toISOString();
     await query(queryText, [currentDate, ipAddress, userId]);
   }
-  /**
-   * Increment failed login attempts for a user
-   * @param {string} userId - User's UUID
-   * @returns {Promise<number>} New failed login attempts count
-   */
+ 
   static async incrementFailedLoginAttempts(userId) {
     const queryText = `
       UPDATE users 
@@ -293,14 +240,8 @@ class User {
 
     return res.rows[0].failed_login_attempts;
   }
-  /**
-   * Change a user's password
-   * @param {string} userId - User's UUID
-   * @param {string} newPassword - New password (will be hashed)
-   * @returns {Promise<void>}
-   */
+ 
   static async changePassword(userId, newPassword) {
-    // Hash the new password
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(newPassword, saltRounds);
 
@@ -322,21 +263,12 @@ class User {
       throw new Error("User not found");
     }
   }
-  /**
-   * Update a user's profile information
-   * @param {string} userId - User's UUID
-   * @param {Object} profileData - Profile data to update
-   * @param {string} [profileData.fullName] - User's full name
-   * @param {string} [profileData.preferredContactMethod] - User's preferred contact method
-   * @returns {Promise<Object>} Updated user object
-   */
+ 
   static async updateProfile(userId, profileData) {
-    // Build the query dynamically based on which fields are provided
     const updates = [];
     const values = [];
     let paramIndex = 1;
 
-    // Add each field to be updated
     if (profileData.fullName !== undefined) {
       updates.push(`full_name = $${paramIndex++}`);
       values.push(profileData.fullName);
@@ -347,14 +279,11 @@ class User {
       values.push(profileData.preferredContactMethod);
     }
 
-    // Add the timestamp and user ID
     updates.push(`updated_at = $${paramIndex++}`);
     values.push(new Date().toISOString());
     values.push(userId);
 
-    // If no updates were provided, throw an error
     if (updates.length === 1) {
-      // Only the timestamp was added
       throw new Error("No fields to update");
     }
 
@@ -381,21 +310,12 @@ class User {
 
     return res.rows[0];
   }
-  /**
-   * Validate a user's password
-   * @param {string} providedPassword - Password to validate
-   * @param {string} storedPasswordHash - Stored password hash from database
-   * @returns {Promise<boolean>} Whether the password is valid
-   */
+ 
   static async validatePassword(providedPassword, storedPasswordHash) {
     return bcrypt.compare(providedPassword, storedPasswordHash);
   }
 
-  /**
-   * Get a user's wallet balances
-   * @param {string} userId - User's UUID
-   * @returns {Promise<Object>} Wallet balances object
-   */
+
   static async getWalletBalances(userId) {
     const queryText = `
       SELECT 
@@ -409,7 +329,6 @@ class User {
     const res = await query(queryText, [userId]);
 
     if (res.rows.length === 0) {
-      // If no wallet record exists, create one with zero balances
       await this.initializeWallet(userId);
       return {
         account_balance: "0.00",
@@ -420,12 +339,7 @@ class User {
 
     return res.rows[0];
   }
-  /**
-   * Initialize a wallet for a new user
-   * @param {string} userId - User's UUID
-   * @returns {Promise<void>}
-   * @private
-   */
+
   static async initializeWallet(userId) {
     const queryText = `
       INSERT INTO user_wallets (
@@ -449,11 +363,7 @@ class User {
       currentDate,
     ]);
   }
-  /**
-   * Get user statistics including KYC status and account activity
-   * @param {string} userId - User's UUID
-   * @returns {Promise<Object>} User statistics object
-   */
+ 
   static async getUserStats(userId) {
     const queryText = `
           SELECT 
@@ -486,31 +396,18 @@ class User {
     return res.rows[0] || null;
   }
 
-  /**
-   * Initiates the account recovery process for a user
-   * @param {Object} recoveryData - Data for account recovery
-   * @param {string} [recoveryData.email] - User's email address
-   * @param {string} [recoveryData.phoneNumber] - User's phone number`
-   * @param {string} recoveryData.method - Recovery method ('email' or 'sms')
-   * @returns {Promise<Object>} Recovery process result
-   * @throws {Error} If recovery initiation fails
-   */
   static async initiateRecovery(recoveryData) {
-    // Verify that either email or phone number is provided
     if (!recoveryData.email && !recoveryData.phoneNumber) {
       throw new Error("Either email or phone number is required");
     }
-    // If user not found, throw an error
     if (!user) {
       throw new Error("No account found with the provided information");
     }
-    // Check if the account is active
     if (user.account_status !== "active") {
       throw new Error(
         `Account is ${user.account_status}. Please contact support.`
       );
     }
-    // Generate an OTP for account recovery
     const OTP = require("./otp.model");
     const otpData = {
       userId: user.user_id,
@@ -520,7 +417,6 @@ class User {
       purpose: "account_recovery",
       deliveryMethod: recoveryData.method,
     };
-    // Generate and send the OTP
     await OTP.generate(otpData);
 
     return {
@@ -533,17 +429,8 @@ class User {
       message: `Recovery code sent via ${recoveryData.method}`,
     };
   }
-  /**
-   * Completes the account recovery process by setting a new password
-   * @param {Object} recoveryData - Data for completing account recovery
-   * @param {string} recoveryData.userId - User's unique ID
-   * @param {string} recoveryData.otpCode - OTP code received by the user
-   * @param {string} recoveryData.newPassword - New password to set
-   * @returns {Promise<Object>} Recovery completion result
-   * @throws {Error} If recovery completion fails
-   */
+ 
   static async completeRecovery(recoveryData) {
-    // Verify that all required fields are provided
     if (
       !recoveryData.userId ||
       !recoveryData.otpCode ||
@@ -564,10 +451,8 @@ class User {
       throw new Error("Invalid or expired recovery code");
     }
 
-    // Change the user's password
     await this.changePassword(recoveryData.userId, recoveryData.newPassword);
 
-    // Update the last login information
     await this.updateLoginInfo(
       recoveryData.userId,
       recoveryData.ipAddress || null
@@ -578,13 +463,7 @@ class User {
       message: "Password has been successfully reset",
     };
   }
-  /**
-   * Updates user contact preferences
-   * @param {string} userId - User's unique ID
-   * @param {Object} preferences - User preferences
-   * @param {string} preferences.preferredContactMethod - Preferred contact method ('email' or 'sms')
-   * @returns {Promise<Object>} Updated user object
-   */
+
   static async updateContactPreferences(userId, preferences) {
     if (!preferences.preferredContactMethod) {
       throw new Error("Preferred contact method is required");
@@ -624,15 +503,7 @@ class User {
 
     return res.rows[0];
   }
-  /**
-   * Creates a new session for a user
-   * @param {string} userId - User's unique ID
-   * @param {Object} sessionData - Session data
-   * @param {string} sessionData.ipAddress - User's IP address
-   * @param {string} sessionData.userAgent - User's browser/device information
-   * @param {number} [sessionData.expiresInDays=7] - Session expiration in days
-   * @returns {Promise<Object>} Created session object
-   */
+
   static async createSession(userId, sessionData) {
     const sessionId = uuidv4();
     const currentDate = new Date().toISOString();
@@ -673,11 +544,7 @@ class User {
       throw new Error(`Failed to create session: ${error.message}`);
     }
   }
-  /**
-   * Validates a user session
-   * @param {string} sessionId - Session ID to validate
-   * @returns {Promise<Object|null>} Session data if valid, null if invalid or expired
-   */
+
   static async validateSession(sessionId) {
     const queryText = `
       SELECT 
@@ -692,29 +559,7 @@ class User {
     const res = await query(queryText, [sessionId]);
     return res.rows[0] || null;
   }
-  /**
-   * Invalidates a user session (logout)
-   * @param {string} sessionId - Session ID to invalidate
-   * @returns {Promise<boolean>} True if session was invalidated, false otherwise
-   */
-  static async invalidateSession(sessionId) {
-    const queryText = `
-    UPDATE user_sessions 
-    SET 
-      is_active = false,
-      updated_at = $1
-    WHERE session_id = $2
-    RETURNING session_id;
-  `;
 
-    const res = await query(queryText, [new Date().toISOString(), sessionId]);
-    return res.rows.length > 0;
-  }
-  /**
-   * Invalidates a user session (logout)
-   * @param {string} sessionId - Session ID to invalidate
-   * @returns {Promise<boolean>} True if session was invalidated, false otherwise
-   */
   static async invalidateSession(sessionId) {
     const queryText = `
     UPDATE user_sessions 
@@ -729,12 +574,21 @@ class User {
     return res.rows.length > 0;
   }
 
-  /**
-   * Invalidates all sessions for a user except the current one
-   * @param {string} userId - User's unique ID
-   * @param {string} [currentSessionId] - Current session ID to preserve (optional)
-   * @returns {Promise<number>} Number of sessions invalidated
-   */
+  static async invalidateSession(sessionId) {
+    const queryText = `
+    UPDATE user_sessions 
+    SET 
+      is_active = false,
+      updated_at = $1
+    WHERE session_id = $2
+    RETURNING session_id;
+  `;
+
+    const res = await query(queryText, [new Date().toISOString(), sessionId]);
+    return res.rows.length > 0;
+  }
+
+
   static async invalidateAllOtherSessions(userId, currentSessionId) {
     let queryText = `
     UPDATE user_sessions 
@@ -746,7 +600,6 @@ class User {
   `;
     const values = [new Date().toISOString(), userId];
 
-    // If currentSessionId is provided, don't invalidate it
     if (currentSessionId) {
       queryText += ` AND session_id != $3`;
       values.push(currentSessionId);
@@ -755,12 +608,7 @@ class User {
     const res = await query(queryText, values);
     return res.rowCount;
   }
-  /**
-   * Helper method to mask email address for privacy
-   * @param {string} email - Email address to mask
-   * @returns {string} Masked email address
-   * @private
-   */
+
   static _maskEmail(email) {
     if (!email) return "";
     const [username, domain] = email.split("@");
@@ -771,12 +619,6 @@ class User {
     return `${maskedUsername}@${domain}`;
   }
 
-  /**
-   * Helper method to mask phone number for privacy
-   * @param {string} phoneNumber - Phone number to mask
-   * @returns {string} Masked phone number
-   * @private
-   */
   static _maskPhoneNumber(phoneNumber) {
     if (!phoneNumber) return "";
     return (
@@ -786,12 +628,6 @@ class User {
     );
   }
 
-  /**
-   * Gets the account completion status including verification and KYC document status
-   * @param {string} userId - User's unique ID
-   * @returns {Promise<Object>} Account completion details
-   */
-  // In user.model.js
   static async getAccountCompletionStatus(userId) {
     try {
       const user = await this.findById(userId);
@@ -828,20 +664,13 @@ class User {
       throw new Error("Failed to check account status");
     }
   }
-  /**
-   * Initiates the password reset process by generating a new OTP.
-   * @param {string} userId - The user's unique ID.
-   * @param {string} purpose - The purpose of the OTP (e.g., 'reset_password').
-   * @returns {Promise<Object>} The generated OTP record.
-   */
+
   static async initiatePasswordReset(userId, purpose = "reset_password") {
-    // Find user
     const user = await this.findbyEmail(email);
     if (!user) {
       throw new Error("User not found");
     }
 
-    // Generate new OTP
     const otpData = {
       userId,
       purpose,
@@ -858,13 +687,6 @@ class User {
     return await OTP.generate(otpData);
   }
 
-  /**
-   * Completes the password reset process by verifying the OTP and updating the password.
-   * @param {string} userId - The user's unique ID.
-   * @param {string} otpCode - The OTP code received by the user.
-   * @param {string} newPassword - The new password to set.
-   * @returns {Promise<Object>} Result indicating success or failure.
-   */
   static async completePasswordReset(userId, otpCode, newPassword) {
     // Verify OTP
     const OTP = require("./otp.model");
@@ -905,24 +727,7 @@ class User {
       message: "Password has been successfully reset",
     };
   }
-  /**
-   * Deletes a user account and all associated data.
-   *
-   * This function performs the following steps:
-   * 1. Verifies the user's password to ensure the request is authorized.
-   * 2. Invalidates all active sessions for the user by marking them as inactive.
-   * 3. Resets the user's wallet balances (account, trading, and referral) to zero.
-   * 4. Deletes the user's KYC (Know Your Customer) documents from the database.
-   * 5. Deletes the user's account record from the database.
-   *
-   * The operation is performed within a database transaction to ensure atomicity.
-   * If any step fails, the transaction is rolled back to maintain data integrity.
-   *
-   * @param {string} userId - The unique ID of the user whose account is to be deleted.
-   * @param {string} password - The user's password for verification.
-   * @returns {Promise<boolean>} Returns `true` if the account was successfully deleted, otherwise `false`.
-   * @throws {Error} Throws an error if the user is not found, the password is invalid, or the deletion process fails.
-   */
+
   static async deleteAccount(userId, password) {
     const userQuery = `
       SELECT password_hash 
@@ -996,19 +801,7 @@ class User {
       client.release();
     }
   }
-  /**
-   * Retrieves the wallet balances for a user.
-   *
-   * This function fetches the account, trading, and referral balances for a user from the database.
-   * If the user is not found, it returns default balances of zero for all wallet categories.
-   *
-   * @param {string} userId - The unique ID of the user whose wallet balances are to be retrieved.
-   * @returns {Promise<Object>} An object containing the wallet balances:
-   * - `account_balance`: The user's account balance as a string.
-   * - `trading_balance`: The user's trading balance as a string.
-   * - `referral_balance`: The user's referral balance as a string.
-   * @throws {Error} Throws an error if the database query fails.
-   */
+
   static async getWalletBalances(userId) {
     const queryText = `
       SELECT 
@@ -1020,11 +813,9 @@ class User {
   `;
 
     try {
-      // Execute the query to fetch wallet balances
       const res = await query(queryText, [userId]);
 
       if (res.rows.length === 0) {
-        // If no user is found, return default zero balances
         return {
           account_balance: "0.00",
           trading_balance: "0.00",
@@ -1032,21 +823,17 @@ class User {
         };
       }
 
-      // Return the wallet balances from the database
       return res.rows[0];
     } catch (error) {
-      // Log and rethrow the error for further handling
       throw new Error(`Failed to retrieve wallet balances: ${error.message}`);
     }
   }
   //resetting password
   static async initiatePasswordReset(email, purpose = "reset_password") {
-    //find the user
     const user = await this.findbyEmail(email);
     if (!user) {
       throw new Error("User not found");
     }
-    //generate the new otp
     const OTP = require("./otp.model");
     const otpData = {
       userId: user.user_id,
