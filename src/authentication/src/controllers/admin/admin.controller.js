@@ -241,6 +241,32 @@ class AdminController {
     }
   }
 
+ static async deleteAccount(req, res, next) {
+  try {
+    const { adminId } = req.admin;
+
+    if (!adminId) {
+      return res.status(STATUS_CODES.UNAUTHORIZED).json(
+        error(new Error('Unauthorized'), 'Missing admin identity in token', STATUS_CODES.UNAUTHORIZED)
+      );
+    }
+
+    const deleted = await Admin.deleteById(adminId);
+
+    if (!deleted) {
+      return res.status(STATUS_CODES.NOT_FOUND).json(
+        error(new Error('Admin not found'), `Admin not found for ID: ${adminId}`, STATUS_CODES.NOT_FOUND)
+      );
+    }
+
+    return res.status(STATUS_CODES.NO_CONTENT).send();
+
+  } catch (err) {
+    next(err);
+  }
+}
+
+
 
 
 

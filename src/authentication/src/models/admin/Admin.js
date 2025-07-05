@@ -158,7 +158,9 @@ class Admin {
 
     const setClause = updates.map(([k], i) => `${k} = $${i + 1}`).join(', ');
     const values = updates.map(([, v]) => v);
-    values.push(adminId); // for WHERE clause
+    values.push(adminId);
+
+
 
     const sql = `
     UPDATE admins
@@ -186,6 +188,25 @@ class Admin {
     }
   }
 
+static async deleteById(adminId) {
+  try {
+    const queryText = `
+      DELETE FROM admins
+      WHERE admin_id = $1
+      RETURNING admin_id
+    `;
+
+    const result = await pool.query(queryText, [adminId]);
+
+    if (result.rowCount === 0) {
+      return null;
+    }
+
+    return result.rows[0];
+  } catch (error) {
+    throw error;
+  }
+}
 
 }
 

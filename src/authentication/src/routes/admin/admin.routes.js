@@ -19,6 +19,7 @@ router.use(adminAuthenticate);
 
 router.patch('/me', AdminController.updateAdminDetails);
 router.get('/me', AdminController.getProfile)
+router.delete('/me', AdminController.deleteAccount)
 
 
 
