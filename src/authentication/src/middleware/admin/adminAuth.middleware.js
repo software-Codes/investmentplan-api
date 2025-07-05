@@ -1,10 +1,7 @@
 const jwt = require('jsonwebtoken');
-const { logger } = require('../../utils/logger');
 const { STATUS_CODES, error } = require('../../utils/response.util');
 
-/**
- * Middleware to authenticate admin using Bearer token
- */
+
 exports.adminAuthenticate = async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
@@ -23,12 +20,11 @@ exports.adminAuthenticate = async (req, res, next) => {
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.admin = {
-            adminId: decoded.sub, 
+            adminId: decoded.sub,
             email: decoded.email,
             role: decoded.role,
             type: decoded.type
         };
-        logger.info(`Admin ${decoded.adminId} authenticated successfully`);
 
 
         next();
@@ -38,7 +34,6 @@ exports.adminAuthenticate = async (req, res, next) => {
                 ? 'Authentication token expired'
                 : 'Invalid authentication token';
 
-        logger.error('Admin authentication failed', { error: err.message });
 
         return res.status(STATUS_CODES.UNAUTHORIZED).json(
             error(err, message, STATUS_CODES.UNAUTHORIZED)

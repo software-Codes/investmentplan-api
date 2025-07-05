@@ -1,42 +1,20 @@
 const Admin = require('../../models/admin/Admin');
 const OTP = require('../../models/otp.model');
-const { logger } = require('../../utils/logger');
 const { success, error, STATUS_CODES } = require('../../utils/response.util');
 const { generateAdminToken } = require('../../utils/admin/token.util')
 const bcrypt = require('bcrypt')
-const {query} = require('../../Config/neon-database')
+const { query } = require('../../Config/neon-database')
 
 
 class AdminController {
 
-  /**
-   * Admin Registration
-   * Algorithm: Input Validation → Uniqueness Check → Database Transaction
-   * Time Complexity: O(1) - Fixed database operations
-   * Space Complexity: O(1) - Fixed memory allocation
-   */
+
   static async register(req, res, next) {
     try {
       const { fullName, email, password, role } = req.body;
 
-      if (!fullName || !email || !password) {
-        return res.status(STATUS_CODES.BAD_REQUEST).json(
-          error(new Error('Missing required fields'), 'Full name, email, and password are required', STATUS_CODES.BAD_REQUEST)
-        );
-      }
 
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        return res.status(STATUS_CODES.BAD_REQUEST).json(
-          error(new Error('Invalid email format'), 'Please provide a valid email address', STATUS_CODES.BAD_REQUEST)
-        );
-      }
 
-      if (password.length < 8) {
-        return res.status(STATUS_CODES.BAD_REQUEST).json(
-          error(new Error('Weak password'), 'Password must be at least 8 characters long', STATUS_CODES.BAD_REQUEST)
-        );
-      }
 
       const existingAdmin = await Admin.findByEmail(email);
       if (existingAdmin) {
@@ -45,7 +23,6 @@ class AdminController {
         );
       }
 
-      // Check against users table
       const userExists = await query(
         `SELECT user_id FROM users WHERE LOWER(email) = $1`,
         [email.toLowerCase()]
@@ -65,12 +42,6 @@ class AdminController {
 
       const newAdmin = await Admin.create(adminData);
 
-      logger.info('Admin registration successful', {
-        adminId: newAdmin.admin_id,
-        email: newAdmin.email,
-        role: newAdmin.role
-      });
-
       return res.status(STATUS_CODES.CREATED).json(
         success(
           {
@@ -86,34 +57,17 @@ class AdminController {
       );
 
     } catch (error) {
-      logger.error('Admin registration failed', { error: error.message });
       next(error);
     }
   }
 
 
-  /**
-   * Admin Login
-   * Algorithm: Credential Validation → OTP Generation → Response
-   * Time Complexity: O(1) - Fixed validation steps
-   * Space Complexity: O(1) - Fixed memory allocation
-   */
+
   static async login(req, res, next) {
     try {
       const { email, password } = req.body;
 
-      // ─── Basic input guard ────────────────────────────────
-      if (!email || !password) {
-        return res.status(STATUS_CODES.BAD_REQUEST).json(
-          error(
-            new Error('Missing credentials'),
-            'Email and password are required',
-            STATUS_CODES.BAD_REQUEST
-          )
-        );
-      }
 
-      // ─── Credential check ────────────────────────────────
       const { isValid, admin } = await Admin.validateCredentials(email, password);
 
       if (!isValid) {
@@ -126,15 +80,13 @@ class AdminController {
         );
       }
 
-      // ─── Token generation ────────────────────────────────
       const token = generateAdminToken(admin);
 
-      logger.info('Admin login successful', { adminId: admin.admin_id, email: admin.email });
 
       return res.status(STATUS_CODES.OK).json(
         success(
           {
-            token,                               // <-- Bearer token
+            token,
             admin: {
               adminId: admin.admin_id,
               fullName: admin.full_name,
@@ -148,29 +100,17 @@ class AdminController {
       );
 
     } catch (err) {
-      logger.error('Admin login failed', { error: err.message });
       next(err);
     }
   }
 
-  /**
-   * Password Reset Request
-   * Algorithm: Email Validation → OTP Generation → Response
-   * Time Complexity: O(1) - Fixed validation steps
-   * Space Complexity: O(1) - Fixed memory allocation
-   */
+
   static async requestPasswordReset(req, res, next) {
     try {
       const { email } = req.body;
 
-      // Validate email
-      if (!email) {
-        return res.status(STATUS_CODES.BAD_REQUEST).json(
-          error(new Error('Missing email'), 'Email is required for password reset', STATUS_CODES.BAD_REQUEST)
-        );
-      }
 
-      // Check if admin exists
+
       const admin = await Admin.findByEmail(email);
       if (!admin) {                         // don’t leak existence
         return res.status(STATUS_CODES.OK).json(
@@ -183,12 +123,8 @@ class AdminController {
         delivery: 'email'
       });
 
-      logger.info('Password reset OTP sent', {
-        adminId: admin.admin_id,
-        email: admin.email
-      });
 
-      logger.info('Reset OTP sent', { adminId: admin.admin_id, email: admin.email });
+
       return res.status(STATUS_CODES.OK).json(
         success(null, 'Password-reset code sent to your email', STATUS_CODES.OK)
       );
@@ -196,22 +132,10 @@ class AdminController {
     } catch (err) { next(err); }
   }
 
-  /**
-   * Reset Password
-   * Algorithm: OTP Validation → Password Update → Response
-   * Time Complexity: O(1) - Fixed validation and update steps
-   * Space Complexity: O(1) - Fixed memory allocation
-   */
-  // controllers/admin/admin.controller.js
   static async resetPassword(req, res, next) {
     try {
       const { email, otpCode, newPassword } = req.body;
 
-      if (!email || !otpCode || !newPassword) {
-        return res.status(STATUS_CODES.BAD_REQUEST).json(
-          error(new Error('Missing fields'), 'Email, OTP code, and new password are required', STATUS_CODES.BAD_REQUEST)
-        );
-      }
 
       if (newPassword.length < 8) {
         return res.status(STATUS_CODES.BAD_REQUEST).json(
@@ -252,7 +176,6 @@ class AdminController {
         )
       );
     } catch (err) {
-      logger.error('Password reset failed', { error: err.message });
       next(err);
     }
   }
@@ -261,17 +184,12 @@ class AdminController {
 
   static async updateAdminDetails(req, res, next) {
     try {
-      const adminId = req.admin?.adminId; // from JWT
+      const adminId = req.admin?.adminId;
       const { fullName, currentPassword, newPassword } = req.body;
 
       const admin = await Admin.findById(adminId);
-      if (!admin) {
-        return res.status(STATUS_CODES.NOT_FOUND).json(
-          error(new Error('Admin not found'), 'Admin not found', STATUS_CODES.NOT_FOUND)
-        );
-      }
 
-      // If password update is requested
+
       if (currentPassword && newPassword) {
         const isPasswordValid = await bcrypt.compare(currentPassword, admin.password_hash);
         if (!isPasswordValid) {
@@ -283,7 +201,6 @@ class AdminController {
         await Admin.updatePassword(adminId, newPassword);
       }
 
-      // If fullName update is requested
       if (fullName) {
         await Admin.updateFullName(adminId, fullName);
       }
@@ -295,6 +212,35 @@ class AdminController {
       next(err);
     }
   }
+
+
+  static async getProfile(req, res, next) {
+    try {
+      const { adminId } = req.admin;
+
+
+      const admin = await Admin.findById(adminId);
+
+
+      return res.status(STATUS_CODES.OK).json(
+        success(
+          {
+            adminId: admin.admin_id,
+            fullName: admin.full_name,
+            email: admin.email,
+            role: admin.role,
+            createdAt: admin.created_at,
+            updatedAt: admin.updated_at,
+          },
+          'Admin profile fetched successfully',
+          STATUS_CODES.OK
+        )
+      );
+    } catch (err) {
+      next(err);
+    }
+  }
+
 
 
 

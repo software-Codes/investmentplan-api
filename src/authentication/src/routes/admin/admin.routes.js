@@ -1,7 +1,3 @@
-/**
- * @file admin.routes.js
- * @description Express routes for admin authentication/management.
- */
 
 const express = require('express');
 const router = express.Router();
@@ -22,6 +18,7 @@ router.post('/auth/reset-password',           AdminController.resetPassword);
 router.use(adminAuthenticate);
 
 router.patch('/me', AdminController.updateAdminDetails);
+router.get('/me', AdminController.getProfile)
 
 
 

@@ -1,8 +1,6 @@
-// models/Admin.js
 const { pool } = require('../../Config/neon-database');
 const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
-const { logger } = require('../../utils/logger');
 
 
 class Admin {
@@ -11,66 +9,52 @@ class Admin {
     this.saltRounds = 12;
   }
 
-  /**
-   * Create new admin account
-   * Algorithm: Database Transaction with Password Hashing
-   * Time Complexity: O(1) - Single insert operation
-   * Space Complexity: O(1) - Fixed memory usage
-   */
-static async create(adminData) {
-  const client = await pool.connect();
+  static async create(adminData) {
+    const client = await pool.connect();
 
-  try {
-    await client.query('BEGIN');
+    try {
+      await client.query('BEGIN');
 
-    // Ensure email is unique across both admins and users
-    const emailCheckQuery = `
+      const emailCheckQuery = `
       SELECT email FROM users WHERE LOWER(email) = $1
     `;
-    const emailExists = await client.query(emailCheckQuery, [adminData.email.toLowerCase()]);
-    if (emailExists.rows.length > 0) {
-      throw new Error('Email already exists in users table');
-    }
+      const emailExists = await client.query(emailCheckQuery, [adminData.email.toLowerCase()]);
+      if (emailExists.rows.length > 0) {
+        throw new Error('Email already exists in users table');
+      }
 
-    const adminId = uuidv4();
-    const currentTimestamp = new Date().toISOString();
-    const passwordHash = await bcrypt.hash(adminData.password, 12);
+      const adminId = uuidv4();
+      const currentTimestamp = new Date().toISOString();
+      const passwordHash = await bcrypt.hash(adminData.password, 12);
 
-    const insertQuery = `
+      const insertQuery = `
       INSERT INTO admins (
         admin_id, full_name, email, password_hash, role, created_at, updated_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $6)
       RETURNING admin_id, full_name, email, role, created_at, updated_at
     `;
 
-    const values = [
-      adminId,
-      adminData.fullName.trim(),
-      adminData.email.toLowerCase().trim(),
-      passwordHash,
-      adminData.role || 'admin',
-      currentTimestamp
-    ];
+      const values = [
+        adminId,
+        adminData.fullName.trim(),
+        adminData.email.toLowerCase().trim(),
+        passwordHash,
+        adminData.role || 'admin',
+        currentTimestamp
+      ];
 
-    const result = await client.query(insertQuery, values);
-    await client.query('COMMIT');
+      const result = await client.query(insertQuery, values);
+      await client.query('COMMIT');
 
-    logger.info(`Admin created successfully`, {
-      adminId,
-      email: adminData.email,
-      role: adminData.role
-    });
+      return result.rows[0];
 
-    return result.rows[0];
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    logger.error(`Failed to create admin: ${error.message}`);
-    throw error;
-  } finally {
-    client.release();
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
-}
 
 
   static async findByEmail(email) {
@@ -87,7 +71,6 @@ static async create(adminData) {
       return result.rows[0] || null;
 
     } catch (error) {
-      logger.error(`Failed to find admin by email: ${error.message}`);
       throw error;
     }
   }
@@ -112,7 +95,6 @@ static async create(adminData) {
       return { isValid: true, admin: adminWithoutPassword };
 
     } catch (error) {
-      logger.error(`Failed to validate admin credentials: ${error.message}`);
       throw error;
     }
   }
@@ -142,33 +124,30 @@ static async create(adminData) {
         throw new Error('Admin not found or inactive');
       }
 
-      logger.info(`Admin password updated successfully`, { adminId });
 
       return result.rows[0];
 
     } catch (error) {
-      logger.error(`Failed to update admin password: ${error.message}`);
       throw error;
     }
   }
 
 
-static async findById(adminId) {
-  try {
-    const queryText = `
+  static async findById(adminId) {
+    try {
+      const queryText = `
       SELECT admin_id, full_name, email, password_hash, role, is_active, created_at, updated_at
       FROM admins 
       WHERE admin_id = $1 AND is_active = true
     `;
 
-    const result = await pool.query(queryText, [adminId]);
-    return result.rows[0] || null;
+      const result = await pool.query(queryText, [adminId]);
+      return result.rows[0] || null;
 
-  } catch (error) {
-    logger.error(`Failed to find admin by ID: ${error.message}`);
-    throw error;
+    } catch (error) {
+      throw error;
+    }
   }
-}
 
 
   static async updateProfile(adminId, fields) {
@@ -203,7 +182,6 @@ static async findById(adminId) {
       const result = await pool.query(queryText, [fullName.trim(), adminId]);
       return result.rows[0];
     } catch (error) {
-      logger.error(`Failed to update admin full name: ${error.message}`);
       throw error;
     }
   }
