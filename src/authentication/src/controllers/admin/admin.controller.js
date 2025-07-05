@@ -260,7 +260,8 @@ class AdminController {
     }
 
     return res.status(STATUS_CODES.NO_CONTENT).send();
-
+ 
+    
   } catch (err) {
     next(err);
   }
