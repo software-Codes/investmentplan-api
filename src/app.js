@@ -165,7 +165,7 @@ const createApp = () => {
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
     maxAge: 86400,
-  };
+  };  
 
   app.use(cors(corsOptions));
 
