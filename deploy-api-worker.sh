@@ -148,7 +148,7 @@ deploy_container_app() {
     local environment_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-BackendContainerAppsEnv"
     local container_app_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-worker"
     local registry_url="${ENVIRONMENT_PREFIX}${PROJECT_PREFIX}contregistry.azurecr.io"
-    local repo_url="https://github.com/gdsc-meru-uni/meru-innovators-infra-api"
+    local repo_url="https://github.com/software-Codes/investmentplan-api"
 
     local branch="Testing-api-infrah"
 
