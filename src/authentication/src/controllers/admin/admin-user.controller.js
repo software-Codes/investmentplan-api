@@ -3,23 +3,11 @@ const { AdminActionError } = require('../../errors/errors')
 const { logger } = require('../../utils/logger');
 const Joi = require('joi');
 
-
-/**
- * AdminUserController
- * ────────────────────
- * Routes mounted under /api/v1/admin/users
- *
- * NOTE:
- *  • req.admin is populated by adminAuthenticate middleware
- *  • adminAuthenticate should also enforce role === 'super_admin'
- */
-
-
 class AdminUserController {
     constructor({ adminUserService }) {
         this.svc = adminUserService;
 
-        // Bind ‘this’ for use as express handlers
+        // Bind 'this' for use as express handlers
         this.listUsers = this.listUsers.bind(this);
         this.getUser = this.getUser.bind(this);
         this.blockUser = this.blockUser.bind(this);
@@ -29,7 +17,6 @@ class AdminUserController {
     }
 
     /* ------------ validators (private) ------------- */
-
     static _validateId(id) {
         const { error } = Joi.string().uuid().required().validate(id);
         if (error) throw new AdminActionError('Invalid UUID supplied', 'VALIDATION');
@@ -72,11 +59,9 @@ class AdminUserController {
             const { userId } = req.params;
             AdminUserController._validateId(userId);
 
-            const { reason = '' } = req.body;
             const result = await this.svc.blockUser({
-                adminId: req.admin.adminId,
+                adminId: req.admin.admin_id, // Make sure this matches your JWT payload structure
                 targetId: userId,
-                reason,
             });
 
             return res
@@ -94,7 +79,7 @@ class AdminUserController {
             AdminUserController._validateId(userId);
 
             const result = await this.svc.unblockUser({
-                adminId: req.admin.adminId,
+                adminId: req.admin.admin_id, // Make sure this matches your JWT payload structure
                 targetId: userId,
             });
 
@@ -113,7 +98,7 @@ class AdminUserController {
             AdminUserController._validateId(userId);
 
             const result = await this.svc.signOutEverywhere({
-                adminId: req.admin.adminId,
+                adminId: req.admin.admin_id, // Make sure this matches your JWT payload structure
                 targetId: userId,
             });
 
@@ -124,6 +109,7 @@ class AdminUserController {
             this._handle(err, res, next);
         }
     }
+
     /** DELETE /:userId   (query ?soft=true for soft-delete) */
     async deleteUser(req, res, next) {
         try {
@@ -132,7 +118,7 @@ class AdminUserController {
 
             const softDelete = req.query.soft === 'true';
             const result = await this.svc.deleteUser({
-                adminId: req.admin.adminId,
+                adminId: req.admin.admin_id, // Make sure this matches your JWT payload structure
                 targetId: userId,
                 softDelete,
             });
@@ -145,10 +131,10 @@ class AdminUserController {
         }
     }
 
-
-
     /* --------------- private helpers --------------- */
     _handle(err, res, next) {
+        console.error('AdminUserController error:', err); // Add logging for debugging
+
         /* 404 ──────────────── */
         if (err.code === 'NOT_FOUND') {
             return res
@@ -174,7 +160,6 @@ class AdminUserController {
         logger.error('Unhandled error in AdminUserController', { err });
         return next(err);
     }
-
 }
 
 module.exports = AdminUserController;

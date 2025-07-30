@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Enhanced Deployment Script for AWS ECS with Robust Error Handling and Logging
+# Enhanced Deployment Script for Azure Container Apps with Robust Error Handling and Logging
 
 # Strict mode for better error handling
 set -euo pipefail
@@ -40,20 +40,9 @@ handle_error() {
 # Trap errors
 trap 'handle_error $LINENO "$BASH_COMMAND"' ERR
 
-# Check for required dependencies
-check_dependencies() {
-    local dependencies=("aws" "docker" "jq")
-    for dep in "${dependencies[@]}"; do
-        if ! command -v "$dep" &>/dev/null; then
-            log_error "$dep is not installed. Please install it and try again."
-            exit 1
-        fi
-    done
-}
-
 # Configuration and Initialization
 initialize_configuration() {
-    # Traverse up the directory tree to find globalenvdev.config
+    # Traverse up the directory tree to find globalenv.config
     local dir
     dir=$(pwd)
     while [[ "$dir" != "/" ]]; do
@@ -88,109 +77,43 @@ validate_configuration() {
     done
 }
 
-# AWS Authentication and Context Setup
-setup_aws_context() {
-    log_info "Checking AWS CLI authentication"
+# Azure authentication and subscription setup
+setup_azure_context() {
+    log_info "Checking Azure CLI authentication"
     
-    # Check if already authenticated
-    if ! aws sts get-caller-identity &>/dev/null; then
-        log_warning "Not authenticated with AWS. Please run 'aws configure' or use AWS credentials."
-        exit 1
+    # Login if not already authenticated
+    if ! az account show &>/dev/null; then
+        log_warning "Not logged in to Azure CLI. Initiating login..."
+        az login
     fi
 
-    log_info "Authenticated AWS Account: $AWS_ACCOUNT_ID"
-    log_info "Region: $AWS_REGION"
+    # Set the target subscription
+    log_info "Setting Azure subscription to ${PROJECT_SUBSCRIPTION_ID}"
+    az account set --subscription "${PROJECT_SUBSCRIPTION_ID}"
+
+    # Verify subscription is set correctly
+    local current_subscription
+    current_subscription=$(az account show --query id -o tsv)
+    if [[ "$current_subscription" != "$PROJECT_SUBSCRIPTION_ID" ]]; then
+        log_error "Failed to set Azure subscription. Current: $current_subscription, Expected: $PROJECT_SUBSCRIPTION_ID"
+        return 1
+    fi
 }
 
-# Create or get service principal for GitHub integration
-setup_service_principal() {
-    local sp_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-github-sp"
+# Prepare Azure Container Registry
+prepare_container_registry() {
+    local registry_name="${ENVIRONMENT_PREFIX}${PROJECT_PREFIX}contregistry"
     
-    log_info "Setting up service principal for GitHub integration: $sp_name"
+    log_info "Checking Azure Container Registry: $registry_name"
     
-    # Check if service principal exists
-    local sp_id=""
-    local sp_json=""
-    
-    # Get the service principal with proper error handling
-    sp_json=$(az ad sp list --display-name "$sp_name" --query "[0]" -o json 2>/dev/null || echo "null")
-    
-    if [[ "$sp_json" != "null" && -n "$sp_json" ]]; then
-        log_info "Service principal already exists, retrieving details..."
-        
-        # Get the object ID from the existing service principal
-        sp_id=$(echo "$sp_json" | jq -r '.appId // empty')
-        
-        # Validate that we have a valid service principal ID
-        if [[ -z "$sp_id" ]]; then
-            log_error "Failed to retrieve service principal ID. Creating a new one..."
-            # Create a new one since we couldn't get valid details
-            local sp_output
-            sp_output=$(az ad sp create-for-rbac --name "$sp_name" --role Contributor --scopes "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}" -o json)
-            
-            sp_id=$(echo "$sp_output" | jq -r '.appId')
-            log_success "Created new service principal $sp_name with ID: $sp_id"
-        else
-            log_info "Retrieved existing service principal with ID: $sp_id"
-            
-            # Check if contributor role is assigned to resource group
-            if [[ -n "$sp_id" ]]; then
-                log_info "Ensuring service principal has necessary role assignments..."
-                
-                local assignment_exists
-                assignment_exists=$(az role assignment list --assignee "$sp_id" --scope "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}" --query "[?roleDefinitionName=='Contributor']" -o json)
-                
-                if [[ "$assignment_exists" == "[]" ]]; then
-                    log_info "Assigning Contributor role to service principal on resource group ${PROJECT_RESOURCE_GROUP}"
-                    az role assignment create --assignee "$sp_id" --role Contributor --scope "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}"
-                else
-                    log_info "Contributor role already assigned to service principal"
-                fi
-            fi
-        fi
-    else
-        log_info "Creating new service principal: $sp_name"
-        # Create a new service principal with Contributor role
-        local sp_output
-        sp_output=$(az ad sp create-for-rbac --name "$sp_name" --role Contributor --scopes "/subscriptions/${PROJECT_SUBSCRIPTION_ID}/resourceGroups/${PROJECT_RESOURCE_GROUP}" -o json)
-        
-        # Extract and store service principal ID
-        sp_id=$(echo "$sp_output" | jq -r '.appId')
-        local sp_password=$(echo "$sp_output" | jq -r '.password')
-        local sp_tenant=$(echo "$sp_output" | jq -r '.tenant')
-        
-        log_success "Created new service principal $sp_name with ID: $sp_id"
-        
-        # Wait for AAD propagation
-        log_info "Waiting for AAD propagation (30 seconds)..."
-        sleep 30
-    fi
-    
-    # Validate service principal ID before continuing
-    if [[ -z "$sp_id" ]]; then
-        log_error "Failed to get or create a valid service principal ID. Exiting."
-        exit 1
-    fi
-    
-    # Export service principal details for use in deployment
-    SP_ID="$sp_id"
-    export SP_ID
-    
-    log_info "Service principal setup complete with ID: $SP_ID"
-}
-
-# ECR Repository Management
-prepare_ecr_repository() {
-    log_info "Checking/Creating ECR Repository: $ECR_REPOSITORY_NAME"
-    
-    # Check if repository exists, create if not
-    if ! aws ecr describe-repositories --repository-names "$ECR_REPOSITORY_NAME" &>/dev/null; then
-        aws ecr create-repository \
-            --repository-name "$ECR_REPOSITORY_NAME" \
-            --region "$AWS_REGION"
-        log_success "ECR Repository created"
-    else
-        log_info "ECR Repository already exists"
+    # Check if registry exists, create if not
+    if ! az acr show --name "$registry_name" &>/dev/null; then
+        log_warning "Container Registry does not exist. Creating..."
+        az acr create \
+            --name "$registry_name" \
+            --resource-group "$PROJECT_RESOURCE_GROUP" \
+            --sku Basic \
+            --admin-enabled true
     fi
 
     # Login to ACR
@@ -225,12 +148,14 @@ deploy_container_app() {
     local environment_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-BackendContainerAppsEnv"
     local container_app_name="${ENVIRONMENT_PREFIX}-${PROJECT_PREFIX}-worker"
     local registry_url="${ENVIRONMENT_PREFIX}${PROJECT_PREFIX}contregistry.azurecr.io"
-    local repo_url="https://github.com/software-Codes/investmentplan-api"
-    local branch="main"
+    local repo_url="https://github.com/gdsc-meru-uni/meru-innovators-infra-api"
+
+    local branch="Testing-api-infrah"
 
     log_info "Deploying Container App: $container_app_name"
 
-    # Deploy container app with valid parameters
+    # Deploy container app
+ # Deploy container app
     az containerapp up \
         --name "$container_app_name" \
         --resource-group "$PROJECT_RESOURCE_GROUP" \
@@ -239,7 +164,9 @@ deploy_container_app() {
         --branch "$branch" \
         --registry-server "$registry_url" \
         --ingress external \
-        --target-port 3000
+        --target-port 8000 \
+        --env-vars \
+
 
 
     # Update container app settings
@@ -250,8 +177,7 @@ deploy_container_app() {
         --cpu 0.25 \
         --memory 0.5Gi \
         --min-replicas 1 \
-        --max-replicas 10 \
-
+        --max-replicas 10
 
     # Optional: Disable public ingress if internal service
     # az containerapp ingress disable \
@@ -261,6 +187,11 @@ deploy_container_app() {
 
 # Main deployment workflow
 main() {
+    # Configuration and setup must happen FIRST
+    initialize_configuration
+    validate_configuration
+
+    # Now safe to use LOG_FOLDER
     local timestamp
     timestamp=$(date +"%Y%m%d_%H%M%S")
     local log_file="${LOG_FOLDER}/deploy_worker_${timestamp}.log"
@@ -280,5 +211,5 @@ main() {
     log_info "Detailed logs available at: $log_file"
 }
 
-# Execute main function
+# Execute main function with error handling
 main "$@"

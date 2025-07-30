@@ -39,14 +39,13 @@ class AdminUserService {
     /**
      * Block (suspend) a user.
      */
-    async blockUser({ adminId, targetId, reason = '' }) {
+    async blockUser({ adminId, targetId}) {
         await this.userRepo.updateStatus(targetId, 'suspended');
 
         await this.auditRepo.log({
             adminId,
             targetUserId: targetId,
             action: 'BLOCK_USER',
-            meta: { reason },
         });
         return { userId: targetId, newStatus: 'suspended' };
     }
@@ -74,7 +73,6 @@ class AdminUserService {
             adminId,
             targetUserId: targetId,
             action: 'FORCE_LOGOUT',
-            meta: { count: invalidated },
         });
         return { userId: targetId, invalidated };
     }

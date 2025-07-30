@@ -5,4 +5,4 @@ class AdminActionError extends Error{
     }
 }
 
-module.exports = {AdminActionError};
+module.exports = {AdminActionError};    
