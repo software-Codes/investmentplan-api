@@ -39,7 +39,7 @@ class AdminUserService {
     /**
      * Block (suspend) a user.
      */
-    async blockUser({ adminId, targetId}) {
+    async blockUser({ adminId, targetId }) {
         await this.userRepo.updateStatus(targetId, 'suspended');
 
         await this.auditRepo.log({
@@ -94,12 +94,15 @@ class AdminUserService {
 
             return { userId: targetId, deleted: true, softDelete };
         } catch (err) {
+            console.log('Failed to delete user',err)
             /* Map repository problems to domain-level errors */
             if (err.code === 'NOT_FOUND') {
                 throw new AdminActionError('User not found', 'NOT_FOUND');
+
             }
             /* Anything else is an unexpected failure inside the repo/DB */
             throw new AdminActionError(err.message, 'DELETE_FAILED');
+
         }
     }
 
