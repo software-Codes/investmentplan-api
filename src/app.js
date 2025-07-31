@@ -15,6 +15,7 @@ const adminRoutes = require("./authentication/src/routes/admin/admin.routes");
 const kycRoutes = require("./authentication/src/routes/kyc/kyc.routes");
 const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./swagger.config");
+const AdminUserRouter = require("../src/authentication/src/routes/admin/admin-users.routes")
 require('../instrument')
 const Sentry = require("@sentry/node")
 // const { validateRegistration, validateLogin } = require("../src/authentication/src/middleware/validation.middleware"); // Import validation middleware
@@ -32,10 +33,10 @@ function validateEnv() {
     process.env.JWT_SECRET = crypto.randomBytes(64).toString("hex");
   }
 
-  if (!process.env.CORS_ORIGIN) {
-    console.warn("[WARN] CORS_ORIGIN not set - defaulting to localhost:3000");
-    process.env.CORS_ORIGIN = "http://localhost:3000";
-  }
+  // if (!process.env.CORS_ORIGIN) {
+  //   console.warn("[WARN] CORS_ORIGIN not set - defaulting to localhost:3000");
+  //   process.env.CORS_ORIGIN = "http://localhost:3000";
+  // }
 }
 
 /**
@@ -120,7 +121,7 @@ const createApp = () => {
     app.use(
       cors({
         origin: process.env.CORS_ORIGIN,
-        methods: ["GET", "POST", "PUT", "DELETE"],
+        methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
         allowedHeaders: ["Content-Type", "Authorization"],
         credentials: true,
         maxAge: 86400,
@@ -158,14 +159,17 @@ const createApp = () => {
     app.use("/api/v1/admin", adminRoutes);
     //apis for document kyc verification
     app.use("/api/v1/kyc", kycRoutes);
+
+    //apis for admin user management
+    app.use("/api/v1/admin/users", AdminUserRouter);
   }
   const corsOptions = {
     origin: [process.env.CORS_ORIGIN, "http://localhost:3000"],
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
     maxAge: 86400,
-  };
+  };  
 
   app.use(cors(corsOptions));
 

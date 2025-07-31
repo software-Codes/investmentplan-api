@@ -1,0 +1,45 @@
+name: Trigger auto deployment for dev-infra-worker
+
+# When this action will be executed
+on:
+  # Automatically trigger it when detected changes in repo
+  push:
+    branches: 
+      [ Testing-api-infrah ]
+    paths:
+    - '**'
+    - '.github/workflows/dev-infra-worker-AutoDeployTrigger-7fd9d4ee-8282-4c3c-9790-e9f6e98f2316.yml'
+
+  # Allow manual trigger 
+  workflow_dispatch:
+      
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout to the branch
+        uses: actions/checkout@v2
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.DEVINFRAWORKER_AZURE_CREDENTIALS }}
+
+      - name: Build and push container image to registry
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          appSourcePath: ${{ github.workspace }}
+          _dockerfilePathKey_: _dockerfilePath_
+          _targetLabelKey_: _targetLabel_
+          registryUrl: devinfracontregistry.azurecr.io
+          registryUsername: ${{ secrets.DEVINFRAWORKER_REGISTRY_USERNAME }}
+          registryPassword: ${{ secrets.DEVINFRAWORKER_REGISTRY_PASSWORD }}
+          containerAppName: dev-infra-worker
+          resourceGroup: DevOps
+          imageToBuild: devinfracontregistry.azurecr.io/dev-infra-worker:${{ github.sha }}
+          
+            
+
+     
+
