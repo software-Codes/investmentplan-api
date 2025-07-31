@@ -60,7 +60,7 @@
                 AdminUserController._validateId(userId);
 
                 const result = await this.svc.blockUser({
-                    adminId: req.admin.admin_id, // Make sure this matches your JWT payload structure
+                    adminId: req.admin.adminId, // Make sure this matches your JWT payload structure
                     targetId: userId,
                 });
 
@@ -80,7 +80,7 @@
                 AdminUserController._validateId(userId);
 
                 const result = await this.svc.unblockUser({
-                    adminId: req.admin.admin_id, // Make sure this matches your JWT payload structure
+                    adminId: req.admin.adminId, // Make sure this matches your JWT payload structure
                     targetId: userId,
                 });
 
@@ -100,13 +100,13 @@
                 AdminUserController._validateId(userId);
 
                 const result = await this.svc.signOutEverywhere({
-                    adminId: req.admin.admin_id, // Make sure this matches your JWT payload structure
+                    adminId: req.admin.adminId, // Make sure this matches your JWT payload structure
                     targetId: userId,
                 });
 
                 return res
                     .status(STATUS_CODES.OK)
-                    .json(success(result, 'All sessions invalidated', STATUS_CODES.OK));
+                    .json(success(result, 'User Loggged out  Successfully. Ask them to login Again', STATUS_CODES.OK));
             } catch (err) {
                 this._handle(err, res, next);
                 console.log("Failed to logout the user", err)
@@ -121,7 +121,7 @@
 
                 const softDelete = req.query.soft === 'true';
                 const result = await this.svc.deleteUser({
-                    adminId: req.admin.admin_id, // Make sure this matches your JWT payload structure
+                    adminId: req.admin.adminId, // Make sure this matches your JWT payload structure
                     targetId: userId,
                     softDelete,
                 });
