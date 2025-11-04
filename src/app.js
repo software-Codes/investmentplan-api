@@ -15,6 +15,7 @@ const adminRoutes = require("./authentication/src/routes/admin/admin.routes");
 const kycRoutes = require("./authentication/src/routes/kyc/kyc.routes");
 const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./swagger.config");
+const AdminUserRouter = require("../src/authentication/src/routes/admin/admin-users.routes")
 require('../instrument')
 const Sentry = require("@sentry/node")
 // const { validateRegistration, validateLogin } = require("../src/authentication/src/middleware/validation.middleware"); // Import validation middleware
@@ -158,6 +159,9 @@ const createApp = () => {
     app.use("/api/v1/admin", adminRoutes);
     //apis for document kyc verification
     app.use("/api/v1/kyc", kycRoutes);
+
+    //apis for admin user management
+    app.use("/api/v1/admin/users", AdminUserRouter);
   }
   const corsOptions = {
     origin: [process.env.CORS_ORIGIN, "http://localhost:3000"],
@@ -165,7 +169,7 @@ const createApp = () => {
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
     maxAge: 86400,
-  };
+  };  
 
   app.use(cors(corsOptions));
 
