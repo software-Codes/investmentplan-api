@@ -192,7 +192,7 @@ router.get(
 router.get(
   "/status",
   authenticate,
-  AuthController.getDocumentStatus
+  (req, res) => res.json({ success: true, status: 'pending', message: 'KYC status endpoint' })
 );
 
 module.exports = router;

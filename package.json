@@ -5,7 +5,11 @@
   "type": "commonjs",
   "scripts": {
     "test": "node --test",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "typeorm": "node --require ./src/database/config/database.config.js node_modules/typeorm/cli.js",
+    "migration:run": "node node_modules/typeorm/cli.js migration:run -d src/database/config/database.config.js",
+    "migration:revert": "node node_modules/typeorm/cli.js migration:revert -d src/database/config/database.config.js",
+    "migration:create": "node node_modules/typeorm/cli.js migration:create"
   },
   "keywords": [],
   "author": "",
@@ -15,7 +19,6 @@
     "@azure/identity": "^4.9.1",
     "@azure/storage-blob": "^12.27.0",
     "@binance/connector": "^3.6.1",
-    "@neondatabase/serverless": "^1.0.0",
     "@sentry/node": "^9.34.0",
     "africastalking": "^0.7.3",
     "axios": "^1.9.0",
@@ -43,10 +46,12 @@
     "nodemailer": "^6.10.1",
     "nodemon": "^3.1.9",
     "pg": "^8.14.1",
+    "reflect-metadata": "^0.2.2",
     "sav": "^1.0.42",
     "smile-identity-core": "^3.1.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
+    "typeorm": "^0.3.27",
     "util": "^0.12.5",
     "uuid": "^11.1.0",
     "winston": "^3.17.0"

@@ -20,7 +20,7 @@ const connectionString =
 const pool = new Pool({
   connectionString,
   ssl: {
-    rejectUnauthorized: true, // Enforce SSL for secure connections
+    rejectUnauthorized: false,
   },
 });
 
