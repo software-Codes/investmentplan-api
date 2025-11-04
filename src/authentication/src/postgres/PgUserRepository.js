@@ -3,8 +3,8 @@
  * ------------------------------------------
  *  • Conditional aggregation turns the many-row wallet table into three balance
  *    columns per user, so each user appears exactly once in the result-set.
- *  • deleteUser() wipes every child table shown in your schema screenshot; if you
- *    later add ON DELETE CASCADE FKs you can prune some DELETEs.
+ *  • deleteUser() removes every child record “manually”.  When you later add
+ *    ON DELETE CASCADE FKs, you can drop most of the explicit DELETEs.
  */
 const IUserRepository  = require('../models/interfaces/IUserRepository');
 const { pool }         = require('../Config/neon-database');
@@ -24,7 +24,7 @@ const BALANCE_JOIN = `
 `;
 
 class PgUserRepository extends IUserRepository {
-  /* ---------- READ MANY ---------- */
+  /* ─────────────── READ MANY ─────────────── */
   async findMany(filters = {}, paging = {}) {
     const { limit, offset } = buildPaging(paging);
 
@@ -58,7 +58,7 @@ class PgUserRepository extends IUserRepository {
     return { rows: rowsRes.rows, total: Number(totalRes.rows[0].count) };
   }
 
-  /* ---------- READ ONE ---------- */
+  /* ─────────────── READ ONE ─────────────── */
   async findById(userId) {
     const res = await pool.query(
       `
@@ -73,39 +73,73 @@ class PgUserRepository extends IUserRepository {
     return res.rows[0] || null;
   }
 
-  /* ---------- UPDATE ---------- */
+  /* ─────────────── UPDATE ─────────────── */
   async updateStatus(userId, newStatus) {
     const { rowCount } = await pool.query(
-      `UPDATE users SET account_status = $1, updated_at = NOW() WHERE user_id = $2`,
+      `UPDATE users
+         SET account_status = $1,
+             updated_at     = NOW()
+       WHERE user_id        = $2`,
       [newStatus, userId],
     );
     if (!rowCount) throw RepositoryError.notFound('User');
   }
 
-  /* ---------- DELETE ---------- */
+  /* ─────────────── DELETE ─────────────── */
+  /**
+   * @param {boolean} softDelete – if true, mark user deactivated instead of hard-deleting.
+   */
   async deleteUser(userId, { softDelete = false } = {}) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
+      /* --- Soft delete: just flip status ---------------------------------- */
       if (softDelete) {
         await client.query(
-          `UPDATE users SET account_status = 'deactivated', updated_at = NOW() WHERE user_id = $1`,
+          `UPDATE users
+             SET account_status = 'deactivated',
+                 updated_at     = NOW()
+           WHERE user_id        = $1`,
           [userId],
         );
       } else {
-        // delete from child tables first to satisfy FK constraints
+        /* --- Hard delete: remove children first --------------------------- */
+
+        /* Wallet / money flow */
         await client.query(`DELETE FROM wallet_transfers  WHERE user_id = $1`, [userId]);
         await client.query(`DELETE FROM deposits          WHERE user_id = $1`, [userId]);
         await client.query(`DELETE FROM withdrawals       WHERE user_id = $1`, [userId]);
         await client.query(`DELETE FROM trading_accounts  WHERE user_id = $1`, [userId]);
-        await client.query(`DELETE FROM referral_bonuses  WHERE referrer_id = $1 OR referee_id = $1`, [userId]);
-        await client.query(`DELETE FROM referrals         WHERE referrer_id = $1 OR referee_id = $1`, [userId]);
-        await client.query(`DELETE FROM wallets           WHERE user_id = $1`, [userId]);
-        await client.query(`DELETE FROM kyc_documents     WHERE user_id = $1`, [userId]);
-        await client.query(`DELETE FROM user_sessions     WHERE user_id = $1`, [userId]);
 
-        // finally remove the user
+        /* Referral programme
+           NOTE: our schema only has referrer_id (no referee_id), so we:
+           1. Grab all referral_id rows where referrer_id = userId
+           2. Delete bonuses for those referral_ids
+           3. Delete the referrals themselves
+        */
+        await client.query(
+          `DELETE FROM referral_bonuses
+             WHERE referral_id IN (
+               SELECT referral_id
+               FROM   referrals
+               WHERE  referrer_id = $1
+             )`,
+          [userId],
+        );
+
+        await client.query(
+          `DELETE FROM referrals
+             WHERE referrer_id = $1`,
+          [userId],
+        );
+
+        /* Misc */
+        await client.query(`DELETE FROM wallets       WHERE user_id = $1`, [userId]);
+        await client.query(`DELETE FROM kyc_documents WHERE user_id = $1`, [userId]);
+        await client.query(`DELETE FROM user_sessions WHERE user_id = $1`, [userId]);
+
+        /* Finally remove the user row itself */
         await client.query(`DELETE FROM users WHERE user_id = $1`, [userId]);
       }
 

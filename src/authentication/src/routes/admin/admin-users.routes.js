@@ -20,8 +20,6 @@ AdminUserRouter.patch('/:userId/block', AdminUserController.blockUser);
 AdminUserRouter.patch('/:userId/unblock', AdminUserController.unblockUser);
 AdminUserRouter.post('/:userId/force-logout', AdminUserController.forceLogoutUser);
     
-// soft delete:  DELETE /:id?soft=true
-// hard delete:  DELETE /:id
 AdminUserRouter.delete('/:userId', AdminUserController.deleteUser);
 
 module.exports = AdminUserRouter;
