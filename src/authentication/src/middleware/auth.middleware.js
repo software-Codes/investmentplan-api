@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const { logger } = require("../utils/logger");
 const { error } = require("../utils/response.util");
 const { isTokenBlacklisted } = require("../helpers/blacklist-auth");
+const { query } = require("../../../database/connection");
 
 exports.authenticate = async (req, res, next) => {
   try {
@@ -53,12 +54,33 @@ exports.authenticate = async (req, res, next) => {
       );
     }
 
-    // 5. Attach user to request
+    // 5. Validate session is active
+    const sessionCheck = await query(
+      `SELECT is_active, expires_at FROM user_sessions WHERE session_id = $1`,
+      [decoded.sessionId]
+    );
+
+    if (!sessionCheck.rows[0] || !sessionCheck.rows[0].is_active) {
+      logger.warn(`Inactive session attempt: ${decoded.sessionId}`);
+      return next(
+        error("Session expired. Please log in again.", 401)
+      );
+    }
+
+    if (new Date(sessionCheck.rows[0].expires_at) < new Date()) {
+      logger.warn(`Expired session attempt: ${decoded.sessionId}`);
+      return next(
+        error("Session expired. Please log in again.", 401)
+      );
+    }
+
+    // 6. Attach user to request
     req.user = {
       userId: decoded.userId,
       sessionId: decoded.sessionId,
-      token // Attach token for potential future use
+      exp: decoded.exp
     };
+    req.token = token;
 
     logger.info(`Authenticated user ${decoded.userId}`);
     next();

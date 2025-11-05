@@ -56,7 +56,7 @@ class User {
   static async findById(userId) {
     const res = await query(
       `SELECT user_id, full_name, email, phone_number, preferred_contact_method, 
-              email_verified, phone_verified, account_status, created_at 
+              email_verified, phone_verified, account_status, profile_photo_url, created_at 
        FROM users WHERE user_id = $1`,
       [userId]
     );
@@ -204,6 +204,34 @@ class User {
 
     await this.changePassword(userId, newPassword);
     return { success: true, message: 'Password reset successfully' };
+  }
+
+  static async updateProfile(userId, updates) {
+    const allowedFields = ['full_name', 'phone_number', 'profile_photo_url'];
+    const fields = [];
+    const values = [];
+    let paramCount = 1;
+
+    Object.keys(updates).forEach(key => {
+      if (allowedFields.includes(key) && updates[key] !== undefined) {
+        fields.push(`${key} = $${paramCount}`);
+        values.push(updates[key]);
+        paramCount++;
+      }
+    });
+
+    if (fields.length === 0) throw new Error('No valid fields to update');
+
+    values.push(userId);
+    const res = await query(
+      `UPDATE users SET ${fields.join(', ')}, updated_at = NOW() 
+       WHERE user_id = $${paramCount} 
+       RETURNING user_id, full_name, email, phone_number, profile_photo_url, account_status, email_verified, created_at`,
+      values
+    );
+
+    if (!res.rows[0]) throw new Error('User not found');
+    return res.rows[0];
   }
 
   static async deleteAccount(userId, password) {

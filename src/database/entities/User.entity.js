@@ -62,6 +62,10 @@ module.exports = new EntitySchema({
       length: 45,
       nullable: true
     },
+    profile_photo_url: {
+      type: 'text',
+      nullable: true
+    },
     created_at: {
       type: 'timestamptz',
       createDate: true
