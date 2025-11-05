@@ -1,0 +1,39 @@
+feat: complete authentication system with admin management and swagger docs
+
+## Core Features
+- User registration with email OTP verification
+- JWT authentication with session validation
+- Profile management (name, phone, photo upload)
+- Password reset with OTP
+- Account deletion with password confirmation
+
+## Admin Features
+- Block/unblock users (prevents login and API access)
+- Force logout users from all devices
+- Delete users (hard/soft delete)
+- List and view user details
+- All actions logged in audit trail
+
+## Security
+- Account status validation on every request
+- Token blacklisting on logout
+- Session validation checks database
+- Password verification for sensitive operations
+- File upload validation (type, size)
+
+## Database
+- Migrations: profile_photo_url, admin_actions table
+- Supabase Storage integration
+- Fixed repository queries
+
+## API Documentation
+- Complete Swagger/OpenAPI 3.0 specification
+- Interactive API testing at /api-docs
+- All endpoints documented with examples
+- Request/response schemas defined
+
+## Code Cleanup
+- Cleaned up app.js (removed unused code)
+- Organized imports and middleware
+- Consistent error responses
+- Removed redundant documentation files

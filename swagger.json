@@ -1,16 +1,12 @@
 {
   "openapi": "3.0.0",
   "info": {
-    "title": "Investment Platform API Documentation",
+    "title": "Investment Plan API",
     "version": "1.0.0",
-    "description": "\n        Complete API documentation for the investment platform with Binance integration.\n        Features include user management, multi-wallet system, investments, deposits/withdrawals,\n        and referral program.\n      ",
+    "description": "Complete API documentation for investment platform with authentication, profile management, KYC verification, and admin operations",
     "contact": {
       "name": "API Support",
-      "email": "support@yourplatform.com"
-    },
-    "license": {
-      "name": "MIT",
-      "url": "https://opensource.org/licenses/MIT"
+      "email": "support@investmentplan.com"
     }
   },
   "servers": [
@@ -19,42 +15,30 @@
       "description": "Development server"
     },
     {
-      "url": "https://api.yourplatform.com",
+      "url": "https://api.investmentplan.com",
       "description": "Production server"
     }
   ],
   "tags": [
     {
-      "name": "Auth",
-      "description": "Authentication endpoints"
+      "name": "Authentication",
+      "description": "User authentication and registration"
     },
     {
-      "name": "Wallet",
-      "description": "Wallet management"
+      "name": "Profile",
+      "description": "User profile management"
     },
     {
-      "name": "Investment",
-      "description": "Investment operations"
-    },
-    {
-      "name": "Deposit",
-      "description": "Deposit management"
-    },
-    {
-      "name": "Withdrawal",
-      "description": "Withdrawal operations"
-    },
-    {
-      "name": "Referral",
-      "description": "Referral system"
-    },
-    {
-      "name": "Admin",
-      "description": "Admin operations"
+      "name": "Password Reset",
+      "description": "Password reset operations"
     },
     {
       "name": "KYC",
-      "description": "KYC verification"
+      "description": "KYC document upload and verification"
+    },
+    {
+      "name": "Admin",
+      "description": "Admin user management operations"
     }
   ],
   "components": {
@@ -62,14 +46,48 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "bearerFormat": "JWT"
+        "bearerFormat": "JWT",
+        "description": "Enter JWT token"
+      },
+      "adminAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Enter admin JWT token"
       }
     },
     "schemas": {
+      "SuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
       "User": {
         "type": "object",
         "properties": {
-          "userId": {
+          "id": {
             "type": "string",
             "format": "uuid"
           },
@@ -83,88 +101,425 @@
           "phoneNumber": {
             "type": "string"
           },
+          "profilePhoto": {
+            "type": "string",
+            "format": "uri"
+          },
           "accountStatus": {
             "type": "string",
-            "enum": [
-              "pending",
-              "active",
-              "suspended"
-            ]
+            "enum": ["pending", "active", "suspended", "deactivated"]
+          },
+          "emailVerified": {
+            "type": "boolean"
+          },
+          "kycStatus": {
+            "type": "string",
+            "enum": ["pending", "submitted"]
           }
         }
       },
       "Wallet": {
         "type": "object",
         "properties": {
-          "walletId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "type": {
-            "type": "string",
-            "enum": [
-              "account",
-              "trading",
-              "referral"
-            ]
-          },
           "balance": {
-            "type": "number"
+            "type": "number",
+            "format": "double"
           },
-          "lockedBalance": {
-            "type": "number"
-          }
-        }
-      },
-      "Investment": {
-        "type": "object",
-        "properties": {
-          "investmentId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "amount": {
-            "type": "number"
-          },
-          "profit": {
-            "type": "number"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "active",
-              "completed",
-              "withdrawn"
-            ]
-          }
-        }
-      },
-      "Transaction": {
-        "type": "object",
-        "properties": {
-          "transactionId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "type": {
-            "type": "string",
-            "enum": [
-              "deposit",
-              "withdrawal"
-            ]
-          },
-          "amount": {
-            "type": "number"
-          },
-          "status": {
-            "type": "string"
-          },
-          "binanceTxId": {
-            "type": "string"
+          "locked": {
+            "type": "number",
+            "format": "double"
           }
         }
       }
     }
   },
-  "paths": {}
+  "paths": {
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Register new user",
+        "description": "Create a new user account and send email verification code",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password", "fullName"],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "example": "user@example.com"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "minLength": 8,
+                    "example": "password123"
+                  },
+                  "fullName": {
+                    "type": "string",
+                    "example": "John Doe"
+                  },
+                  "phoneNumber": {
+                    "type": "string",
+                    "example": "+1234567890"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Account created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Account created successfully! Please check your email for verification code."
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "userId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "nextStep": {
+                          "type": "string",
+                          "example": "verify_email"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/verify-email": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Verify email with OTP",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["userId", "otpCode"],
+                "properties": {
+                  "userId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "otpCode": {
+                    "type": "string",
+                    "example": "123456"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Email verified successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "User login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Login successful"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "accessToken": {
+                          "type": "string"
+                        },
+                        "tokenType": {
+                          "type": "string",
+                          "example": "Bearer"
+                        },
+                        "expiresIn": {
+                          "type": "integer",
+                          "example": 604800
+                        },
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        },
+                        "wallets": {
+                          "type": "object",
+                          "properties": {
+                            "account": {
+                              "$ref": "#/components/schemas/Wallet"
+                            },
+                            "trading": {
+                              "$ref": "#/components/schemas/Wallet"
+                            },
+                            "referral": {
+                              "$ref": "#/components/schemas/Wallet"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials"
+          },
+          "403": {
+            "description": "Account suspended or not verified"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Logout user",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Logged out successfully"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": ["Profile"],
+        "summary": "Get current user profile",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "User profile retrieved"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/profile": {
+      "put": {
+        "tags": ["Profile"],
+        "summary": "Update user profile",
+        "description": "Update name, phone, or profile photo (all fields optional)",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fullName": {
+                    "type": "string"
+                  },
+                  "phoneNumber": {
+                    "type": "string"
+                  },
+                  "photo": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Profile photo (JPG/PNG, max 10MB)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile updated successfully"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/account": {
+      "delete": {
+        "tags": ["Profile"],
+        "summary": "Delete user account",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["password"],
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "format": "password"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Account deleted successfully"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List all users",
+        "security": [{"adminAuth": []}],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["pending", "active", "suspended", "deactivated"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Users fetched successfully"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{userId}/block": {
+      "patch": {
+        "tags": ["Admin"],
+        "summary": "Block user",
+        "security": [{"adminAuth": []}],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User suspended successfully"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{userId}/unblock": {
+      "patch": {
+        "tags": ["Admin"],
+        "summary": "Unblock user",
+        "security": [{"adminAuth": []}],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User reactivated successfully"
+          }
+        }
+      }
+    }
+  }
 }
