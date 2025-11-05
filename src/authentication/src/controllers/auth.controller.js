@@ -230,10 +230,24 @@ class AuthController {
       }
 
       // Check account status
+      if (user.account_status === 'suspended') {
+        return res.status(403).json({
+          success: false,
+          message: 'Your account has been suspended. Please contact support.'
+        });
+      }
+
+      if (user.account_status === 'deactivated') {
+        return res.status(403).json({
+          success: false,
+          message: 'Your account has been deactivated. Please contact support.'
+        });
+      }
+
       if (user.account_status !== 'active') {
         return res.status(403).json({
           success: false,
-          message: `Your account is ${user.account_status}. Please contact support.`
+          message: 'Your account is not active. Please complete registration or contact support.'
         });
       }
 

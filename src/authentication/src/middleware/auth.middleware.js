@@ -54,7 +54,34 @@ exports.authenticate = async (req, res, next) => {
       );
     }
 
-    // 5. Validate session is active
+    // 5. Check user account status
+    const userCheck = await query(
+      `SELECT account_status FROM users WHERE user_id = $1`,
+      [decoded.userId]
+    );
+
+    if (!userCheck.rows[0]) {
+      logger.warn(`User not found: ${decoded.userId}`);
+      return next(
+        error("Account not found. Please log in again.", 401)
+      );
+    }
+
+    if (userCheck.rows[0].account_status === 'suspended') {
+      logger.warn(`Suspended user attempt: ${decoded.userId}`);
+      return next(
+        error("Your account has been suspended. Please contact support.", 403)
+      );
+    }
+
+    if (userCheck.rows[0].account_status === 'deactivated') {
+      logger.warn(`Deactivated user attempt: ${decoded.userId}`);
+      return next(
+        error("Your account has been deactivated. Please contact support.", 403)
+      );
+    }
+
+    // 6. Validate session is active
     const sessionCheck = await query(
       `SELECT is_active, expires_at FROM user_sessions WHERE session_id = $1`,
       [decoded.sessionId]
@@ -74,7 +101,7 @@ exports.authenticate = async (req, res, next) => {
       );
     }
 
-    // 6. Attach user to request
+    // 7. Attach user to request
     req.user = {
       userId: decoded.userId,
       sessionId: decoded.sessionId,

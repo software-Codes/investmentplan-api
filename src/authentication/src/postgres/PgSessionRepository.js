@@ -14,7 +14,7 @@ class PgSessionRepository extends ISessionRepository {
     async invalidateSessions(sessionIds) {
         if (!sessionIds.length) return 0;
         const { rowCount } = await pool.query(
-            `UPDATE user_sessions SET is_active = false, updated_at = NOW()
+            `UPDATE user_sessions SET is_active = false
        WHERE session_id = ANY($1::uuid[])`,
             [sessionIds],
         );
@@ -23,7 +23,7 @@ class PgSessionRepository extends ISessionRepository {
 
     async invalidateAll(userId) {
         const { rowCount } = await pool.query(
-            `UPDATE user_sessions SET is_active = false, updated_at = NOW()
+            `UPDATE user_sessions SET is_active = false
        WHERE user_id = $1`,
             [userId],
         );

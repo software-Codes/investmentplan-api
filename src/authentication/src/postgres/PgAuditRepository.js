@@ -14,8 +14,8 @@ class PgAuditRepository {
   async log({ adminId, targetUserId, action }) {
     await pool.query(
       `INSERT INTO admin_actions
-     (log_id, admin_id, target_user_id, action, created_at)
-   VALUES (gen_random_uuid(), $1, $2, $3, NOW())`,
+     (admin_id, target_user_id, action)
+   VALUES ($1, $2, $3)`,
       [adminId, targetUserId, action]
     );
   }

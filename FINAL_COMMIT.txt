@@ -1,0 +1,114 @@
+feat: complete authentication system with admin user management
+
+## Authentication & User Management
+- User registration with email OTP verification
+- 4-step onboarding: register → verify email → upload KYC → login
+- JWT authentication with 7-day expiration
+- Session management with database validation
+- Secure logout with token blacklisting
+- Password reset with OTP verification (min 8 chars)
+
+## Profile Management
+- Single PUT endpoint for flexible updates (name, phone, photo)
+- Multipart form-data support for optional fields
+- Profile photos stored in Supabase Storage (10MB max, JPG/PNG)
+- Account deletion with password confirmation
+
+## Admin User Management
+- Block/suspend users (prevents login and API access)
+- Unblock/reactivate users (restores full access)
+- Force logout users from all devices
+- Delete users (hard delete or soft delete)
+- List and view user details
+- All actions logged in audit trail
+
+## Security Enhancements
+- Account status validation on every API request
+- Blocked users cannot login or access any endpoint
+- Session validation checks database on each request
+- Token blacklisting prevents use after logout
+- Password verification for account deletion
+- Generic messages in password reset (prevent email enumeration)
+- File type and size validation
+
+## Database Changes
+- Added profile_photo_url column to users table
+- Created admin_actions table for audit logging
+- Migrations: 
+  - 1700000000001-AddProfilePhotoToUsers
+  - 1700000000002-CreateAdminActionsTable
+- Created AdminAction entity
+
+## API Improvements
+- Consistent response format across all endpoints
+- Web-app friendly login response with organized data
+- Proper HTTP status codes (401, 403, 404, 500)
+- Clear error messages for blocked/suspended accounts
+- Comprehensive error handling
+
+## Storage Integration
+- Supabase Storage for profile photos and KYC documents
+- Organized file structure by userId
+- Public URLs for immediate access
+- Service role key for backend operations
+- Separate buckets: kyc-documents, profile-photos
+
+## Technical Fixes
+- Fixed static method call in AuthController (this → AuthController)
+- Enhanced auth middleware with account status check
+- Updated User model with updateProfile method
+- Extended SupabaseStorageService for profile photos
+- Admin audit logging with PgAuditRepository
+
+## Documentation
+- API_DOCUMENTATION.md - Complete user API reference
+- ADMIN_API.md - Complete admin API reference
+- ADMIN_IMPLEMENTATION.md - Admin features summary
+- Removed redundant documentation files
+
+## Endpoints Summary
+
+### User Endpoints
+POST   /api/v1/auth/register
+POST   /api/v1/auth/verify-email
+POST   /api/v1/auth/resend-verification
+POST   /api/v1/auth/upload-document
+POST   /api/v1/auth/login
+POST   /api/v1/auth/logout
+GET    /api/v1/auth/me
+PUT    /api/v1/auth/profile
+DELETE /api/v1/auth/account
+POST   /api/v1/auth/password-reset/initiate
+POST   /api/v1/auth/password-reset/complete
+GET    /api/v1/auth/documents
+
+### Admin Endpoints
+GET    /api/v1/admin/users
+GET    /api/v1/admin/users/:userId
+PATCH  /api/v1/admin/users/:userId/block
+PATCH  /api/v1/admin/users/:userId/unblock
+POST   /api/v1/admin/users/:userId/force-logout
+DELETE /api/v1/admin/users/:userId
+
+## Account Status Flow
+pending → active → suspended (blocked) → active (unblocked)
+                ↓
+           deactivated (soft delete)
+                ↓
+           deleted (hard delete - permanent)
+
+## Key Features
+✅ One-click admin actions (no reason required)
+✅ Immediate effect on user access
+✅ Audit trail for all admin actions
+✅ Recoverable blocks (unblock anytime)
+✅ Flexible profile updates (optional fields)
+✅ Secure file uploads with validation
+✅ Session validation on every request
+✅ Clear user-facing error messages
+
+## Testing
+- All migrations applied successfully
+- Admin actions table created
+- Profile photo column added
+- Ready for production testing
