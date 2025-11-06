@@ -1,6 +1,6 @@
 
 
-const { pool } = require('../Config/neon-database'); // adjust path if needed
+const { pool } = require('../Config/supabase-database'); // adjust path if needed
 
 class PgAuditRepository {
   /**

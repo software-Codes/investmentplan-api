@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const { addTokenToBlacklist } = require('../helpers/blacklist-auth');
 const SupabaseStorageService = require('../services/supabase-storage.service');
 const KYCDocument = require('../models/kyc-document.model');
-const Wallet = require('../../../Investment/src/models/wallets/wallets.models');
+const { query } = require('../../../database/connection');
 
 class AuthController {
   // Step 1: Register user
@@ -269,7 +269,12 @@ class AuthController {
       });
 
       const token = AuthController.generateJwtToken(user.user_id, session.session_id);
-      const wallets = await Wallet.getUserWallets(user.user_id);
+      
+      const walletsResult = await query(
+        `SELECT wallet_type, balance, locked_balance FROM wallets WHERE user_id = $1`,
+        [user.user_id]
+      );
+      const wallets = walletsResult.rows;
 
       return res.status(200).json({
         success: true,
@@ -392,7 +397,10 @@ class AuthController {
         });
       }
 
-      const wallets = await Wallet.getUserWallets(req.user.userId);
+      const walletsResult = await query(
+        `SELECT wallet_type, balance, locked_balance FROM wallets WHERE user_id = $1`,
+        [req.user.userId]
+      );
       const kycDocs = await KYCDocument.findByUserId(req.user.userId);
 
       return res.status(200).json({
@@ -408,7 +416,7 @@ class AuthController {
             emailVerified: user.email_verified,
             createdAt: user.created_at
           },
-          wallets: wallets.map(w => ({
+          wallets: walletsResult.rows.map(w => ({
             type: w.wallet_type,
             balance: parseFloat(w.balance || 0),
             lockedBalance: parseFloat(w.locked_balance || 0)

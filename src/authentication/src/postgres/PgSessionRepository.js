@@ -1,5 +1,5 @@
 const ISessionRepository = require('../models/interfaces/ISessionRepository');
-const { pool } = require('../Config/neon-database');
+const { pool } = require('../Config/supabase-database');
 const RepositoryError = require('../errors/RepositoryError');
 
 class PgSessionRepository extends ISessionRepository {

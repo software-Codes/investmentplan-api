@@ -7,7 +7,7 @@
  *    ON DELETE CASCADE FKs, you can drop most of the explicit DELETEs.
  */
 const IUserRepository  = require('../models/interfaces/IUserRepository');
-const { pool }         = require('../Config/neon-database');
+const { pool }         = require('../Config/supabase-database');
 const SqlBuilder       = require('../utils/sqlBuilder.util');
 const { buildPaging }  = require('../utils/pagination.util');
 const RepositoryError  = require('../errors/RepositoryError');

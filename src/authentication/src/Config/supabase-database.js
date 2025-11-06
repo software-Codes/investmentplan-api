@@ -1,5 +1,5 @@
 /**
- * @file neon-database.js
+ * @file supabase-database.js
  * @description Neon PostgreSQL database connection with debugging and proper export.
  */
 

@@ -1,7 +1,7 @@
 const Admin = require("../../models/admin/Admin");
 const OTP = require("../../models/otp.model");
 const { generateAdminToken } = require("../../utils/admin/token.util");
-const { query } = require("../../Config/neon-database");
+const { query } = require("../../Config/supabase-database");
 const bcrypt = require("bcrypt");
 const { STATUS_CODES } = require("../../utils/response.util");
 

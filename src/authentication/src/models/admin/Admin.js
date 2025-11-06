@@ -1,4 +1,4 @@
-const { pool } = require('../../Config/neon-database');
+const { pool } = require('../../Config/supabase-database');
 const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
 
