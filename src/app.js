@@ -1,3 +1,4 @@
+// src/app.js
 require("dotenv").config();
 const express = require("express");
 const http = require("http");
@@ -11,13 +12,30 @@ const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./swagger.config");
 const Sentry = require("@sentry/node");
 
+// ── Existing feature routes
 const authRoutes = require("./authentication/src/routes/auth.routes");
 const adminRoutes = require("./authentication/src/routes/admin/admin.routes");
 const adminUserRoutes = require("./authentication/src/routes/admin/admin-users.routes");
 const kycRoutes = require("./authentication/src/routes/kyc/kyc.routes");
 
-require('../instrument');
+// ── Deposit module
+const { createDepositRouter } = require("./Investment/src/modules/deposit/routes/deposit.routes");
+const { createAdminDepositRouter } = require("./Investment/src/modules/deposit/routes/adminDeposit.routes");
+const { DepositService } = require("./Investment/src/modules/deposit/services/deposit.service");
+const { BinanceProvider } = require("./Investment/src/modules/deposit/providers/binance.provider");
+const { WalletService } = require("./Investment/src/wallet/wallet.service");
+const { AdminDepositSyncJob } = require("./Investment/src/modules/deposit/jobs/adminDepositSync.job");
 
+// ── Auth middlewares (protect routes)
+const { authenticate } = require("./authentication/src/middleware/auth.middleware");
+const { adminAuthenticate } = require("./authentication/src/middleware/admin/adminAuth.middleware");
+
+// ── DB connection
+const { pool } = require("./database/connection");
+
+require("../instrument");
+
+/** Validate env early so the app fails fast in prod */
 function validateEnv() {
   if (!process.env.JWT_SECRET) {
     if (process.env.NODE_ENV === "production") {
@@ -31,6 +49,13 @@ function validateEnv() {
 const createApp = () => {
   const app = express();
   const server = http.createServer(app);
+
+  const container = {
+    services: {},
+    jobs: {},
+  };
+
+
 
   function setupMiddleware() {
     app.use(helmet());
@@ -65,17 +90,90 @@ const createApp = () => {
     }
   }
 
+
+
+  function setupDepositModule() {
+    const binance = new BinanceProvider({
+      apiKey: process.env.BINANCE_API_KEY,
+      apiSecret: process.env.BINANCE_API_SECRET,
+      timeout: Number(process.env.DEPOSIT_PROVIDER_TIMEOUT_MS || 10000),
+      logger: console,
+    });
+
+    const withTransaction = async (fn) => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const result = await fn(client);
+        await client.query("COMMIT");
+        return result;
+      } catch (e) {
+        await client.query("ROLLBACK");
+        throw e;
+      } finally {
+        client.release();
+      }
+    };
+
+    const walletService = new WalletService({ db: pool, withTransaction });
+    const depositService = new DepositService({
+      db: pool,
+      walletService,
+      binance,
+      logger: console,
+    });
+
+    const depositRouter = createDepositRouter({
+      depositService,
+      authenticate,
+      logger: console,
+    });
+
+    const adminDepositRouter = createAdminDepositRouter({
+      depositService,
+      adminAuthenticate,
+      logger: console,
+    });
+
+    // Admin background sync job - verifies pending deposits (only in production)
+    const syncEnabled = process.env.ADMIN_SYNC_ENABLED !== 'false' && process.env.NODE_ENV === 'production';
+    if (syncEnabled) {
+      const syncJob = new AdminDepositSyncJob({
+        depositService,
+        binance,
+        logger: console,
+        intervalMs: Number(process.env.ADMIN_SYNC_INTERVAL_MS || 60000), // 1 minute default
+      });
+      syncJob.start();
+      container.jobs.adminDepositSync = syncJob;
+      console.log('[INFO] AdminDepositSyncJob started');
+    } else {
+      console.log('[INFO] AdminDepositSyncJob disabled (set NODE_ENV=production and ADMIN_SYNC_ENABLED=true to enable)');
+    }
+
+    container.services.depositService = depositService;
+    container.services.walletService = walletService;
+    container.services.binance = binance;
+
+    app.use("/api/v1/deposit", depositRouter);
+    app.use("/api/v1/admin/deposits", adminDepositRouter);
+  }
+
   function setupRoutes() {
+    // Docs & health
     app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-    
     app.get("/health", (req, res) =>
       res.json({ status: "healthy", timestamp: new Date().toISOString() })
     );
 
+    // Existing areas
     app.use("/api/v1/auth", authRoutes);
     app.use("/api/v1/admin", adminRoutes);
     app.use("/api/v1/admin/users", adminUserRoutes);
     app.use("/api/v1/kyc", kycRoutes);
+
+    // Deposit module
+    setupDepositModule();
   }
 
   function notFoundHandler(req, res) {
@@ -106,7 +204,7 @@ const createApp = () => {
     }
   }
 
-  return { app, server, initialize };
+  return { app, server, initialize, container };
 };
 
 module.exports = createApp;
