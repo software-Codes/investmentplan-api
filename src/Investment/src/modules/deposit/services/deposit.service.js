@@ -28,6 +28,7 @@ const { BinanceProvider } = require('../providers/binance.provider');
 const { isValidTxHash, buildExplorerUrl, normalizeNetwork } = require('../utils/txUtils');
 const { DepositStatus, makeSubmitDepositResponse } = require('../dto/deposit.dto');
 const { DepositEmailService } = require('./depositEmail.service');
+const { DepositLoggerService } = require('./depositLogger.service');
 
 class DepositService {
     /**
@@ -37,12 +38,14 @@ class DepositService {
      * @param {BinanceProvider} deps.binance
      * @param {import('pino').Logger} [deps.logger]
      */
-    constructor({ db, walletService, binance, logger, emailService }) {
+    constructor({ db, walletService, binance, logger, emailService, depositLogger }) {
         this.repo = new DepositRepository(db);
         this.wallets = walletService;
         this.binance = binance;
         this.logger = logger || pino({ name: 'DepositService' });
         this.emailService = emailService || new DepositEmailService({ db });
+        this.depositLogger = depositLogger || new DepositLoggerService();
+        this.depositLogger.connect().catch(err => this.logger.error({ err }, 'Failed to connect deposit logger'));
     }
 
     /**
@@ -56,17 +59,60 @@ class DepositService {
      */
     async submitDeposit({ userId, txId, network = 'ERC20' }) {
         const net = normalizeNetwork(network);
+        let logId = null;
+
+        // Get user info for logging
+        try {
+            const { rows } = await this.repo.db.query(
+                'SELECT full_name, email FROM users WHERE user_id = $1',
+                [userId]
+            );
+            const user = rows[0] || {};
+            
+            // Create single log document
+            logId = await this.depositLogger.createLog({
+                userId,
+                userName: user.full_name || 'Unknown',
+                userEmail: user.email || 'Unknown',
+                txId
+            });
+
+            await this.depositLogger.addStage({
+                logId,
+                stage: 'SUBMIT_STARTED',
+                status: 'info',
+                data: { network: net }
+            });
+        } catch (err) {
+            this.logger.error({ err }, 'Failed to initialize deposit log');
+        }
 
         // 1) Validate tx format
         if (!isValidTxHash(txId, net)) {
-            throw new DepositError('ERR_TXID_INVALID', 'Invalid transaction hash format for ERC20');
+            const error = new DepositError('ERR_TXID_INVALID', 'Invalid transaction hash format for ERC20');
+            await this.depositLogger.addStage({
+                logId,
+                stage: 'VALIDATION_FAILED',
+                status: 'error',
+                data: { reason: 'invalid_format' },
+                error
+            });
+            throw error;
         }
 
         // 2) If tx exists, allow the SAME user to trigger a fresh verify; block others.
         const existing = await this.repo.findByTxId(txId);
         if (existing) {
             if (existing.user_id && existing.user_id !== userId) {
-                throw new DepositError('ERR_TXID_ALREADY_CLAIMED', 'This transaction has already been claimed');
+                const error = new DepositError('ERR_TXID_ALREADY_CLAIMED', 'This transaction has already been claimed');
+                await this.depositLogger.addStage({
+                    logId,
+                    stage: 'DUPLICATE_CLAIM',
+                    status: 'error',
+                    data: { claimedBy: existing.user_id },
+                    error
+                });
+                throw error;
             }
 
             // Same user re-submitted; try to progress the state (fresh verify).
@@ -86,8 +132,23 @@ class DepositService {
         const onChain = allDeposits.find(d => (d.txId || '').toLowerCase() === txId.toLowerCase());
 
         if (!onChain) {
-            throw new DepositError('ERR_TXID_NOT_FOUND', 'Transaction not found in Binance deposit history. Please verify the transaction hash and ensure it was sent to the correct address.');
+            const error = new DepositError('ERR_TXID_NOT_FOUND', 'Transaction not found in Binance deposit history. Please verify the transaction hash and ensure it was sent to the correct address.');
+            await this.depositLogger.addStage({
+                logId,
+                stage: 'BINANCE_LOOKUP',
+                status: 'error',
+                data: { reason: 'not_found', searchedDeposits: allDeposits.length },
+                error
+            });
+            throw error;
         }
+
+        await this.depositLogger.addStage({
+            logId,
+            stage: 'BINANCE_FOUND',
+            status: 'success',
+            data: { amount: onChain.amount, status: onChain.status, address: onChain.address }
+        });
 
         // 4) Validate address match
         const addressMatch = onChain.address && onChain.address.length > 6
@@ -95,16 +156,40 @@ class DepositService {
             : true;
 
         if (!addressMatch) {
-            throw new DepositError('ERR_ADDRESS_MISMATCH', `This deposit was sent to ${onChain.address} but our address is ${cfg.DEPOSIT_ADDRESS}. Please contact support.`);
+            const error = new DepositError('ERR_ADDRESS_MISMATCH', `This deposit was sent to ${onChain.address} but our address is ${cfg.DEPOSIT_ADDRESS}. Please contact support.`);
+            await this.depositLogger.addStage({
+                logId,
+                stage: 'ADDRESS_VALIDATION',
+                status: 'error',
+                data: { expected: cfg.DEPOSIT_ADDRESS, received: onChain.address },
+                error
+            });
+            throw error;
         }
 
         // 5) Check status - only accept SUCCESS
         if (onChain.status === 'PENDING') {
-            throw new DepositError('ERR_PENDING_CONFIRMATION', `Your deposit is pending confirmation on the blockchain. Current status: ${onChain.status}. Please wait a few minutes and try again.`);
+            const error = new DepositError('ERR_PENDING_CONFIRMATION', `Your deposit is pending confirmation on the blockchain. Current status: ${onChain.status}. Please wait a few minutes and try again.`);
+            await this.depositLogger.addStage({
+                logId,
+                stage: 'STATUS_CHECK',
+                status: 'pending',
+                data: { binanceStatus: onChain.status },
+                error
+            });
+            throw error;
         }
 
         if (onChain.status !== 'SUCCESS') {
-            throw new DepositError('ERR_PROVIDER_STATUS', `Deposit status is ${onChain.status}. Only successful deposits can be credited. Please contact support if this persists.`);
+            const error = new DepositError('ERR_PROVIDER_STATUS', `Deposit status is ${onChain.status}. Only successful deposits can be credited. Please contact support if this persists.`);
+            await this.depositLogger.addStage({
+                logId,
+                stage: 'STATUS_CHECK',
+                status: 'error',
+                data: { binanceStatus: onChain.status },
+                error
+            });
+            throw error;
         }
 
         // 6) SUCCESS — validate amount and credit wallet
@@ -122,6 +207,14 @@ class DepositService {
             source: 'manual',
         });
 
+        await this.depositLogger.updateDepositId({ logId, depositId: deposit.deposit_id });
+        await this.depositLogger.addStage({
+            logId,
+            stage: 'DB_RECORD_CREATED',
+            status: 'success',
+            data: { depositId: deposit.deposit_id, amount: amountUsd }
+        });
+
         // 8) Credit wallet (idempotent)
         await this.wallets.creditAccount(userId, amountUsd, {
             reason: 'deposit',
@@ -129,6 +222,13 @@ class DepositService {
             network: net,
             source: 'manual',
             idempotencyKey: `deposit:${txId}`,
+        });
+
+        await this.depositLogger.addStage({
+            logId,
+            stage: 'WALLET_CREDITED',
+            status: 'success',
+            data: { amount: amountUsd, idempotencyKey: `deposit:${txId}` }
         });
 
         // 9) Mark as confirmed
@@ -139,9 +239,23 @@ class DepositService {
             metadata: { provider: onChain, credited_amount_usd: amountUsd },
         });
 
+        await this.depositLogger.addStage({
+            logId,
+            stage: 'STATUS_CONFIRMED',
+            status: 'success',
+            data: { status: 'completed' }
+        });
+
         // 10) Send email notifications (async, don't block response)
-        this._sendDepositEmails(userId, confirmed.deposit_id, txId, amountUsd).catch(err => {
+        this._sendDepositEmails(userId, confirmed.deposit_id, txId, amountUsd, logId).catch(err => {
             this.logger.error({ err, depositId: confirmed.deposit_id }, 'Failed to send deposit emails');
+        });
+
+        await this.depositLogger.addStage({
+            logId,
+            stage: 'DEPOSIT_COMPLETED',
+            status: 'success',
+            data: { amount: amountUsd, depositId: deposit.deposit_id }
         });
 
         const explorerUrl = buildExplorerUrl(txId, net);
@@ -330,7 +444,7 @@ class DepositService {
      * Send deposit confirmation emails to user and admin
      * @private
      */
-    async _sendDepositEmails(userId, depositId, txId, amount) {
+    async _sendDepositEmails(userId, depositId, txId, amount, logId) {
         try {
             // Fetch user details
             const userQuery = 'SELECT user_id, email, full_name FROM users WHERE user_id = $1';
@@ -338,6 +452,12 @@ class DepositService {
             
             if (!rows || rows.length === 0) {
                 this.logger.warn({ userId }, 'User not found for email notification');
+                await this.depositLogger.addStage({
+                    logId,
+                    stage: 'EMAIL_USER_NOT_FOUND',
+                    status: 'error',
+                    data: {}
+                });
                 return;
             }
 
@@ -352,6 +472,12 @@ class DepositService {
                 depositId,
             });
             this.logger.info({ userId, depositId }, 'User deposit confirmation email sent');
+            await this.depositLogger.addStage({
+                logId,
+                stage: 'EMAIL_USER_SENT',
+                status: 'success',
+                data: { to: user.email }
+            });
 
             // Send admin email
             await this.emailService.sendAdminDepositNotification({
@@ -363,8 +489,21 @@ class DepositService {
                 userId: user.user_id,
             });
             this.logger.info({ userId, depositId }, 'Admin deposit notification email sent');
+            await this.depositLogger.addStage({
+                logId,
+                stage: 'EMAIL_ADMIN_SENT',
+                status: 'success',
+                data: {}
+            });
         } catch (err) {
             this.logger.error({ err, userId, depositId }, 'Error sending deposit emails');
+            await this.depositLogger.addStage({
+                logId,
+                stage: 'EMAIL_FAILED',
+                status: 'error',
+                data: {},
+                error: err
+            });
             // Don't throw - email failure shouldn't break deposit flow
         }
     }

@@ -11,14 +11,14 @@ class AdminDepositController {
 
     async listBinanceDeposits(req, res) {
         try {
-            const days = parseInt(req.query.days) || 90;
+            const days = parseInt(req.query.days) || 1000;
             const coin = req.query.coin || 'USDT';
             const network = req.query.network || 'ETH';
 
-            if (days < 1 || days > 90) {
+            if (days < 1 || days > 1000) {
                 return res.status(400).json({
                     success: false,
-                    message: 'Days must be between 1 and 90',
+                    message: 'Days must be between 1 and 1000',
                 });
             }
 
