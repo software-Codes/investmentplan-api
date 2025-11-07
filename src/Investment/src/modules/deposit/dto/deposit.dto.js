@@ -6,30 +6,31 @@
  */
 
 const DepositStatus = Object.freeze({
-    PENDING: 'PENDING',
-    PROCESSING: 'PROCESSING',
-    CONFIRMED: 'CONFIRMED',
-    FAILED: 'FAILED',
+    PENDING: 'pending',
+    PROCESSING: 'processing',
+    CONFIRMED: 'completed',
+    FAILED: 'failed',
 });
 
 function makeSubmitDepositResponse({ deposit, explorerUrl }) {
+    const status = (deposit.status || '').toLowerCase();
     return {
-        depositId: deposit.id,
+        depositId: deposit.deposit_id,
         status: deposit.status,
         message:
-            deposit.status === DepositStatus.PENDING
+            status === 'pending'
                 ? 'Deposit submitted. Awaiting verification.'
-                : deposit.status === DepositStatus.PROCESSING
+                : status === 'processing'
                     ? 'Deposit is being verified.'
-                    : deposit.status === DepositStatus.CONFIRMED
+                    : status === 'completed'
                         ? 'Deposit verified and credited.'
                         : 'Deposit failed.',
-        txId: deposit.txId,
+        txId: deposit.tx_id,
         network: deposit.network,
-        amountUsd: Number(deposit.amountUsd),
+        amountUsd: Number(deposit.amount_usd || 0),
         explorerUrl,
         nextAction:
-            deposit.status === DepositStatus.CONFIRMED
+            status === 'completed'
                 ? 'none'
                 : 'wait_for_verification',
     };
@@ -37,13 +38,13 @@ function makeSubmitDepositResponse({ deposit, explorerUrl }) {
 
 function makeDepositListItem(row) {
     return {
-        depositId: row.id,
-        txId: row.tx_id || row.txId,
-        amountUsd: Number(row.amount_usd ?? row.amountUsd),
+        depositId: row.deposit_id,
+        txId: row.tx_id,
+        amountUsd: Number(row.amount_usd || 0),
         network: row.network,
         status: row.status,
-        verifiedAt: row.verified_at || row.verifiedAt || null,
-        createdAt: row.created_at || row.createdAt,
+        verifiedAt: row.verified_at || null,
+        createdAt: row.created_at,
         message: row.message || null,
     };
 }

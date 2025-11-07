@@ -5,6 +5,9 @@
   "type": "commonjs",
   "scripts": {
     "test": "node --test",
+    "test:deposit": "node --test test/deposit.integration.test.js",
+    "test:deposit:setup": "bash test/run-tests.sh",
+    "test:all": "node --test test/*.test.js",
     "dev": "nodemon index.js",
     "typeorm": "node --require ./src/database/config/database.config.js node_modules/typeorm/cli.js",
     "migration:run": "node node_modules/typeorm/cli.js migration:run -d src/database/config/database.config.js",
@@ -47,6 +50,7 @@
     "nodemailer": "^6.10.1",
     "nodemon": "^3.1.9",
     "pg": "^8.14.1",
+    "pino": "^10.1.0",
     "reflect-metadata": "^0.2.2",
     "sav": "^1.0.42",
     "smile-identity-core": "^3.1.0",

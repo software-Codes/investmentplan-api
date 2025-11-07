@@ -39,6 +39,10 @@
     {
       "name": "Admin",
       "description": "Admin user management operations"
+    },
+    {
+      "name": "Deposits",
+      "description": "USDT deposit operations - Submit transaction hash and check status"
     }
   ],
   "components": {
@@ -128,6 +132,198 @@
           "locked": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "DepositInstructions": {
+        "type": "object",
+        "properties": {
+          "depositAddress": {
+            "type": "string",
+            "example": "0x54af84786bc0386d44fe908b2946f7f50c0f513f"
+          },
+          "asset": {
+            "type": "string",
+            "example": "USDT"
+          },
+          "networks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": ["ERC20"]
+          },
+          "minDeposit": {
+            "type": "number",
+            "example": 10
+          },
+          "minConfirmations": {
+            "type": "number",
+            "example": 12
+          },
+          "explorerUrl": {
+            "type": "string",
+            "example": "https://etherscan.io/tx/"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "howToGetTxHash": {
+            "type": "object"
+          },
+          "txHashFormat": {
+            "type": "object"
+          },
+          "importantNotes": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "troubleshooting": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "security": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "support": {
+            "type": "object"
+          }
+        }
+      },
+      "DepositSubmit": {
+        "type": "object",
+        "required": ["txId"],
+        "properties": {
+          "txId": {
+            "type": "string",
+            "description": "Ethereum transaction hash (0x + 64 hex characters)",
+            "example": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+            "pattern": "^0x[a-fA-F0-9]{64}$"
+          },
+          "network": {
+            "type": "string",
+            "description": "Network type (default: ERC20)",
+            "example": "ERC20",
+            "enum": ["ERC20"]
+          }
+        }
+      },
+      "DepositResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "Deposit verified and credited to your Account Wallet."
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "depositId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["PENDING", "PROCESSING", "CONFIRMED", "FAILED"],
+                "example": "CONFIRMED"
+              },
+              "message": {
+                "type": "string"
+              },
+              "txId": {
+                "type": "string"
+              },
+              "network": {
+                "type": "string",
+                "example": "ERC20"
+              },
+              "amountUsd": {
+                "type": "number",
+                "format": "double",
+                "example": 100.50
+              },
+              "explorerUrl": {
+                "type": "string",
+                "example": "https://etherscan.io/tx/0x123..."
+              },
+              "nextAction": {
+                "type": "string",
+                "enum": ["none", "wait_for_verification"],
+                "example": "none"
+              }
+            }
+          }
+        }
+      },
+      "DepositStatusResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "Deposit verified and credited."
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "depositId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["PENDING", "PROCESSING", "CONFIRMED", "FAILED"]
+              },
+              "txId": {
+                "type": "string"
+              },
+              "amountUsd": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              }
+            }
+          }
+        }
+      },
+      "DepositError": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "message": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "ERR_TXID_REQUIRED",
+              "ERR_TXID_INVALID",
+              "ERR_TXID_ALREADY_CLAIMED",
+              "ERR_ADDRESS_MISMATCH",
+              "ERR_PROVIDER_STATUS",
+              "ERR_AMOUNT_OUT_OF_RANGE",
+              "ERR_DEPOSIT_NOT_FOUND"
+            ]
           }
         }
       }
@@ -517,6 +713,601 @@
         "responses": {
           "200": {
             "description": "User reactivated successfully"
+          }
+        }
+      }
+    },
+    "/api/v1/deposit/instructions": {
+      "get": {
+        "tags": ["Deposits"],
+        "summary": "Get deposit instructions",
+        "description": "Retrieve comprehensive instructions for making USDT deposits including supported networks, minimum amounts, and step-by-step guides for different wallets/exchanges",
+        "responses": {
+          "200": {
+            "description": "Deposit instructions retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/DepositInstructions"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "depositAddress": "0x54af84786bc0386d44fe908b2946f7f50c0f513f",
+                    "asset": "USDT",
+                    "networks": ["ERC20"],
+                    "minDeposit": 10,
+                    "minConfirmations": 12,
+                    "explorerUrl": "https://etherscan.io/tx/",
+                    "steps": [
+                      {
+                        "title": "Choose Your Sending Method",
+                        "description": "You can send from Binance, MetaMask, Trust Wallet, or any crypto exchange/wallet that supports USDT on Ethereum (ERC20)."
+                      },
+                      {
+                        "title": "Send USDT to Our Address",
+                        "description": "Send USDT on the Ethereum network (ERC20) to the address shown above. Minimum deposit: $10.",
+                        "important": [
+                          "Network MUST be Ethereum (ERC20) - NOT Tron (TRC20) or BSC (BEP20)",
+                          "Use 'Send via Crypto Network' - NOT internal transfers or Binance Pay",
+                          "Minimum amount: $10 USDT"
+                        ]
+                      }
+                    ],
+                    "txHashFormat": {
+                      "description": "Valid transaction hash format",
+                      "format": "0x followed by 64 hexadecimal characters",
+                      "example": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                      "length": 66
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/deposit/submit": {
+      "post": {
+        "tags": ["Deposits"],
+        "summary": "Submit deposit transaction",
+        "description": "Submit an Ethereum transaction hash for USDT deposit verification. The system will verify the transaction on Binance and credit your account wallet if valid.",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DepositSubmit"
+              },
+              "examples": {
+                "validDeposit": {
+                  "summary": "Valid deposit submission",
+                  "value": {
+                    "txId": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                    "network": "ERC20"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deposit confirmed and credited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepositResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "Deposit verified and credited to your Account Wallet.",
+                  "data": {
+                    "depositId": "550e8400-e29b-41d4-a716-446655440000",
+                    "status": "CONFIRMED",
+                    "message": "Deposit verified and credited.",
+                    "txId": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                    "network": "ERC20",
+                    "amountUsd": 100.50,
+                    "explorerUrl": "https://etherscan.io/tx/0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                    "nextAction": "none"
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Deposit submitted, awaiting verification",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepositResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "We found your deposit on Binance and are waiting for confirmations.",
+                  "data": {
+                    "depositId": "550e8400-e29b-41d4-a716-446655440000",
+                    "status": "PROCESSING",
+                    "message": "Deposit is being verified.",
+                    "txId": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                    "network": "ERC20",
+                    "amountUsd": 0,
+                    "explorerUrl": "https://etherscan.io/tx/0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                    "nextAction": "wait_for_verification"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request - bad txId format, wrong address, or amount out of range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepositError"
+                },
+                "examples": {
+                  "invalidTxId": {
+                    "summary": "Invalid transaction hash format",
+                    "value": {
+                      "success": false,
+                      "message": "Invalid transaction hash format.",
+                      "code": "ERR_TXID_INVALID"
+                    }
+                  },
+                  "addressMismatch": {
+                    "summary": "Wrong deposit address",
+                    "value": {
+                      "success": false,
+                      "message": "Deposit was not sent to the configured address.",
+                      "code": "ERR_ADDRESS_MISMATCH"
+                    }
+                  },
+                  "amountOutOfRange": {
+                    "summary": "Amount below minimum",
+                    "value": {
+                      "success": false,
+                      "message": "Deposit amount is outside allowed limits.",
+                      "code": "ERR_AMOUNT_OUT_OF_RANGE"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - missing or invalid JWT token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Transaction already claimed by another user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepositError"
+                },
+                "example": {
+                  "success": false,
+                  "message": "This transaction has already been claimed.",
+                  "code": "ERR_TXID_ALREADY_CLAIMED"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable - deposit not confirmed by provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepositError"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Unable to submit deposit. Please try again.",
+                  "code": "ERR_PROVIDER_STATUS"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/deposit/status/{txId}": {
+      "get": {
+        "tags": ["Deposits"],
+        "summary": "Check deposit status",
+        "description": "Get the current status of a deposit by transaction hash. This endpoint re-verifies the transaction with Binance to provide the latest status.",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "txId",
+            "in": "path",
+            "required": true,
+            "description": "Ethereum transaction hash (0x + 64 hex characters)",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{64}$",
+              "example": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deposit status retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepositStatusResponse"
+                },
+                "examples": {
+                  "confirmed": {
+                    "summary": "Confirmed deposit",
+                    "value": {
+                      "success": true,
+                      "message": "Deposit verified and credited.",
+                      "data": {
+                        "depositId": "550e8400-e29b-41d4-a716-446655440000",
+                        "status": "CONFIRMED",
+                        "txId": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                        "amountUsd": 100.50
+                      }
+                    }
+                  },
+                  "processing": {
+                    "summary": "Processing deposit",
+                    "value": {
+                      "success": true,
+                      "message": "On-chain transaction detected. Waiting for confirmations.",
+                      "data": {
+                        "depositId": "550e8400-e29b-41d4-a716-446655440000",
+                        "status": "PROCESSING",
+                        "txId": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                        "amountUsd": null
+                      }
+                    }
+                  },
+                  "failed": {
+                    "summary": "Failed deposit",
+                    "value": {
+                      "success": true,
+                      "message": "Deposit failed verification. Check the tx hash and try again.",
+                      "data": {
+                        "depositId": "550e8400-e29b-41d4-a716-446655440000",
+                        "status": "FAILED",
+                        "txId": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                        "amountUsd": null
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid txId parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepositError"
+                },
+                "example": {
+                  "success": false,
+                  "message": "txId is required",
+                  "code": "ERR_TXID_REQUIRED"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - missing or invalid JWT token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Deposit not found - transaction not submitted yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepositError"
+                },
+                "example": {
+                  "success": false,
+                  "message": "No deposit claim found for this txId. Submit it first.",
+                  "code": "ERR_DEPOSIT_NOT_FOUND"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Could not fetch status. Try again later."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/deposits/binance": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get all Binance deposit transactions",
+        "description": "Fetch all deposit transactions from Binance for the configured admin address. Shows both claimed and unclaimed deposits with enriched data from our database.",
+        "security": [{"adminAuth": []}],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "description": "Number of days to look back (1-90, default fetches all)",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 90,
+              "default": 90
+            }
+          },
+          {
+            "name": "coin",
+            "in": "query",
+            "description": "Cryptocurrency coin",
+            "schema": {
+              "type": "string",
+              "default": "USDT"
+            }
+          },
+          {
+            "name": "network",
+            "in": "query",
+            "description": "Blockchain network",
+            "schema": {
+              "type": "string",
+              "default": "ETH",
+              "enum": ["ETH"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Binance deposits retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Retrieved 15 deposits from Binance (last 90 days)"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "deposits": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "txId": {
+                                "type": "string",
+                                "example": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+                              },
+                              "amount": {
+                                "type": "number",
+                                "example": 100.50
+                              },
+                              "coin": {
+                                "type": "string",
+                                "example": "USDT"
+                              },
+                              "network": {
+                                "type": "string",
+                                "example": "ETH"
+                              },
+                              "address": {
+                                "type": "string",
+                                "example": "0x54af84786bc0386d44fe908b2946f7f50c0f513f"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": ["SUCCESS", "PENDING", "CREDITED"],
+                                "example": "SUCCESS"
+                              },
+                              "insertTime": {
+                                "type": "number",
+                                "description": "Unix timestamp in milliseconds",
+                                "example": 1699564800000
+                              },
+                              "claimed": {
+                                "type": "boolean",
+                                "description": "Whether this deposit has been claimed by a user",
+                                "example": true
+                              },
+                              "claimedBy": {
+                                "type": "string",
+                                "format": "uuid",
+                                "nullable": true,
+                                "description": "User ID who claimed this deposit"
+                              },
+                              "ourStatus": {
+                                "type": "string",
+                                "enum": ["PENDING", "PROCESSING", "CONFIRMED", "FAILED"],
+                                "nullable": true,
+                                "description": "Status in our database"
+                              },
+                              "explorerUrl": {
+                                "type": "string",
+                                "example": "https://etherscan.io/tx/0x123..."
+                              }
+                            }
+                          }
+                        },
+                        "summary": {
+                          "type": "object",
+                          "properties": {
+                            "total": {
+                              "type": "integer",
+                              "example": 15
+                            },
+                            "claimed": {
+                              "type": "integer",
+                              "example": 12
+                            },
+                            "unclaimed": {
+                              "type": "integer",
+                              "example": 3
+                            },
+                            "totalAmount": {
+                              "type": "string",
+                              "example": "1523.45"
+                            }
+                          }
+                        },
+                        "filters": {
+                          "type": "object",
+                          "properties": {
+                            "days": {
+                              "type": "integer"
+                            },
+                            "coin": {
+                              "type": "string"
+                            },
+                            "network": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Retrieved 15 deposits from Binance (last 90 days)",
+                  "data": {
+                    "deposits": [
+                      {
+                        "txId": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                        "amount": 100.50,
+                        "coin": "USDT",
+                        "network": "ETH",
+                        "address": "0x54af84786bc0386d44fe908b2946f7f50c0f513f",
+                        "status": "SUCCESS",
+                        "insertTime": 1699564800000,
+                        "claimed": true,
+                        "claimedBy": "f1b210a3-16e4-42a1-8042-779e9a582470",
+                        "ourStatus": "CONFIRMED",
+                        "explorerUrl": "https://etherscan.io/tx/0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+                      },
+                      {
+                        "txId": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+                        "amount": 50.00,
+                        "coin": "USDT",
+                        "network": "ETH",
+                        "address": "0x54af84786bc0386d44fe908b2946f7f50c0f513f",
+                        "status": "SUCCESS",
+                        "insertTime": 1699478400000,
+                        "claimed": false,
+                        "claimedBy": null,
+                        "ourStatus": null,
+                        "explorerUrl": "https://etherscan.io/tx/0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+                      }
+                    ],
+                    "summary": {
+                      "total": 15,
+                      "claimed": 12,
+                      "unclaimed": 3,
+                      "totalAmount": "1523.45"
+                    },
+                    "filters": {
+                      "days": 90,
+                      "coin": "USDT",
+                      "network": "ETH"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Days must be between 1 and 90"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - missing or invalid admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Failed to fetch Binance deposits"
+                }
+              }
+            }
           }
         }
       }

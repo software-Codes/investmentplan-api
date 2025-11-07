@@ -34,7 +34,7 @@ class DepositRepository {
     async createPending({ userId, txId, amountUsd, network = 'ERC20', source = 'manual' }) {
         // Duplicate guard within window
         const dupQ = `
-      SELECT id, created_at
+      SELECT deposit_id, created_at
       FROM ${this.table}
       WHERE tx_id = $1
         AND created_at >= NOW() - INTERVAL '${cfg.DUPLICATE_WINDOW_HOURS} hours'
@@ -70,7 +70,7 @@ class DepositRepository {
       SET status = $2,
           updated_at = NOW(),
           metadata = COALESCE($3::jsonb, metadata)
-      WHERE id = $1
+      WHERE deposit_id = $1
         AND status = $4
       RETURNING *
     `;
@@ -86,21 +86,25 @@ class DepositRepository {
         return rows[0];
     }
 
-    async markConfirmed(depositId, { verifiedAt = null, creditedAt = null, metadata = undefined } = {}) {
+    async markConfirmed(depositId, { verifiedAt = null, creditedAt = null, amountUsd = null, metadata = undefined } = {}) {
         const upd = `
       UPDATE ${this.table}
       SET status = $2,
-          verified_at = COALESCE($3, NOW()),
-          credited_at = COALESCE($4, NOW()),
+          amount = COALESCE($3, amount),
+          amount_usd = COALESCE($4, amount_usd),
+          verified_at = COALESCE($5, NOW()),
+          credited_at = COALESCE($6, NOW()),
           updated_at = NOW(),
-          metadata = COALESCE($5::jsonb, metadata)
-      WHERE id = $1
-        AND status IN ($6, $7)
+          metadata = COALESCE($7::jsonb, metadata)
+      WHERE deposit_id = $1
+        AND status IN ($8, $9)
       RETURNING *
     `;
         const { rows } = await this.db.query(upd, [
             depositId,
             DepositStatus.CONFIRMED,
+            amountUsd,
+            amountUsd,
             verifiedAt,
             creditedAt,
             metadata ? JSON.stringify(metadata) : null,
@@ -120,7 +124,7 @@ class DepositRepository {
           message = COALESCE($3, message),
           updated_at = NOW(),
           metadata = COALESCE($4::jsonb, metadata)
-      WHERE id = $1
+      WHERE deposit_id = $1
         AND status IN ($5, $6)
       RETURNING *
     `;

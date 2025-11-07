@@ -1,4 +1,4 @@
-
+// index.js
 const createApp = require("./src/app");
 const dotenv = require("dotenv");
 
@@ -30,7 +30,7 @@ async function startServer() {
   try {
     logger.info(`Starting application in ${ENVIRONMENT} mode...`);
 
-    const { app, server, initialize } = createApp();
+    const { app, server, initialize, container } = createApp();
 
     await initialize();
 
@@ -38,6 +38,11 @@ async function startServer() {
       logger.success(`Server running on port ${PORT}`);
       logger.success(`Ready at ${new Date().toISOString()}`);
       logger.info(`Health check: http://localhost:${PORT}/health`);
+
+      const provider = (process.env.DEPOSIT_PROVIDER || "binance").toLowerCase();
+      if (provider === "binance" && container?.jobs?.depositMonitor) {
+        logger.info("Deposit monitor job started (Binance polling enabled).");
+      }
 
       if (ENVIRONMENT === "development") {
         logger.info(`Available routes: http://localhost:${PORT}`);
@@ -51,8 +56,6 @@ async function startServer() {
     process.exit(1);
   }
 }
-
-
 
 startServer().catch((error) => {
   logger.error(`Critical failure during startup: ${error.message}`);
