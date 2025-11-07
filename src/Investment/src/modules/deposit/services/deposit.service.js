@@ -27,6 +27,7 @@ const { DepositRepository, DepositError } = require('../models/deposit.model'); 
 const { BinanceProvider } = require('../providers/binance.provider');
 const { isValidTxHash, buildExplorerUrl, normalizeNetwork } = require('../utils/txUtils');
 const { DepositStatus, makeSubmitDepositResponse } = require('../dto/deposit.dto');
+const { DepositEmailService } = require('./depositEmail.service');
 
 class DepositService {
     /**
@@ -36,11 +37,12 @@ class DepositService {
      * @param {BinanceProvider} deps.binance
      * @param {import('pino').Logger} [deps.logger]
      */
-    constructor({ db, walletService, binance, logger }) {
+    constructor({ db, walletService, binance, logger, emailService }) {
         this.repo = new DepositRepository(db);
         this.wallets = walletService;
         this.binance = binance;
         this.logger = logger || pino({ name: 'DepositService' });
+        this.emailService = emailService || new DepositEmailService({ db });
     }
 
     /**
@@ -137,6 +139,11 @@ class DepositService {
             metadata: { provider: onChain, credited_amount_usd: amountUsd },
         });
 
+        // 10) Send email notifications (async, don't block response)
+        this._sendDepositEmails(userId, confirmed.deposit_id, txId, amountUsd).catch(err => {
+            this.logger.error({ err, depositId: confirmed.deposit_id }, 'Failed to send deposit emails');
+        });
+
         const explorerUrl = buildExplorerUrl(txId, net);
         return makeSubmitDepositResponse({ deposit: confirmed, explorerUrl });
     }
@@ -196,6 +203,11 @@ class DepositService {
             verifiedAt: new Date(),
             creditedAt: new Date(),
             metadata: { provider: onChain, credited_amount_usd: amountUsd },
+        });
+
+        // Send email notifications (async, don't block)
+        this._sendDepositEmails(userId || dep.user_id, confirmed.deposit_id, txId, amountUsd).catch(err => {
+            this.logger.error({ err, depositId: confirmed.deposit_id }, 'Failed to send deposit emails');
         });
 
         return confirmed;
@@ -311,6 +323,49 @@ class DepositService {
         } catch (err) {
             client.release();
             throw err;
+        }
+    }
+
+    /**
+     * Send deposit confirmation emails to user and admin
+     * @private
+     */
+    async _sendDepositEmails(userId, depositId, txId, amount) {
+        try {
+            // Fetch user details
+            const userQuery = 'SELECT user_id, email, full_name FROM users WHERE user_id = $1';
+            const { rows } = await this.repo.db.query(userQuery, [userId]);
+            
+            if (!rows || rows.length === 0) {
+                this.logger.warn({ userId }, 'User not found for email notification');
+                return;
+            }
+
+            const user = rows[0];
+
+            // Send user email
+            await this.emailService.sendUserDepositConfirmation({
+                userEmail: user.email,
+                userName: user.full_name,
+                amount,
+                txId,
+                depositId,
+            });
+            this.logger.info({ userId, depositId }, 'User deposit confirmation email sent');
+
+            // Send admin email
+            await this.emailService.sendAdminDepositNotification({
+                userEmail: user.email,
+                userName: user.full_name,
+                amount,
+                txId,
+                depositId,
+                userId: user.user_id,
+            });
+            this.logger.info({ userId, depositId }, 'Admin deposit notification email sent');
+        } catch (err) {
+            this.logger.error({ err, userId, depositId }, 'Error sending deposit emails');
+            // Don't throw - email failure shouldn't break deposit flow
         }
     }
 }

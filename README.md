@@ -89,6 +89,21 @@ POST /api/v1/auth/login
 - Includes user profile and wallet balances
 - Token required for all protected endpoints
 
+## 📧 Email Notifications
+
+### Automatic Emails on Deposit
+
+When a deposit is successfully confirmed:
+- ✅ **User receives:** Confirmation email with amount, deposit ID, and blockchain link
+- 📊 **Admin receives:** Notification email with user details and transaction info
+
+**Configuration:**
+```env
+EMAIL_USER=your_email@gmail.com
+EMAIL_PASS=your_app_password
+ADMIN_EMAIL=admin@yourplatform.com
+```
+
 ## 🔌 API Endpoints
 
 ### Authentication
