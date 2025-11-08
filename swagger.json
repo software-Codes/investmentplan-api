@@ -43,6 +43,14 @@
     {
       "name": "Deposits",
       "description": "USDT deposit operations - Submit transaction hash and check status"
+    },
+    {
+      "name": "Wallet",
+      "description": "User wallet operations - Transfer funds, view balances, and check locked funds"
+    },
+    {
+      "name": "Admin Wallet",
+      "description": "Admin wallet monitoring - View all users, transfers, locked funds, and platform statistics"
     }
   ],
   "components": {
@@ -1308,6 +1316,681 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/wallet/transfer": {
+      "post": {
+        "tags": ["Wallet"],
+        "summary": "Transfer funds between wallets",
+        "description": "Transfer funds from Account to Trading wallet, Trading to Account wallet, or Referral to Account wallet. Principal transfers are locked for 30 days.",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["fromWallet", "toWallet", "amount"],
+                "properties": {
+                  "fromWallet": {
+                    "type": "string",
+                    "enum": ["account", "trading", "referral"],
+                    "example": "account"
+                  },
+                  "toWallet": {
+                    "type": "string",
+                    "enum": ["account", "trading", "referral"],
+                    "example": "trading"
+                  },
+                  "amount": {
+                    "type": "number",
+                    "minimum": 0.01,
+                    "example": 100.50
+                  },
+                  "transferType": {
+                    "type": "string",
+                    "enum": ["principal", "profit"],
+                    "description": "Type of transfer - principal locked for 30 days, profit for 7 days",
+                    "example": "principal"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transfer successful",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "Transfer completed successfully",
+                  "data": {
+                    "transferId": "550e8400-e29b-41d4-a716-446655440000",
+                    "fromWallet": "account",
+                    "toWallet": "trading",
+                    "amount": 100.50,
+                    "transferType": "principal",
+                    "lockedUntil": "2024-02-15T10:30:00.000Z",
+                    "status": "active"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid transfer request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/wallet/balances": {
+      "get": {
+        "tags": ["Wallet"],
+        "summary": "Get all wallet balances",
+        "description": "Retrieve balances for all three wallets (account, trading, referral) with locked amounts",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Balances retrieved successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "account": {
+                      "balance": 1500.75,
+                      "locked": 500.00
+                    },
+                    "trading": {
+                      "balance": 2300.50,
+                      "locked": 1000.00
+                    },
+                    "referral": {
+                      "balance": 150.25,
+                      "locked": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/wallet/transfers": {
+      "get": {
+        "tags": ["Wallet"],
+        "summary": "Get transfer history",
+        "description": "Retrieve paginated transfer history with filtering options",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "fromWallet",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["account", "trading", "referral"]
+            }
+          },
+          {
+            "name": "toWallet",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["account", "trading", "referral"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transfer history retrieved",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "transfers": [
+                      {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "fromWallet": "account",
+                        "toWallet": "trading",
+                        "amount": 100.50,
+                        "transferType": "principal",
+                        "status": "active",
+                        "lockedUntil": "2024-02-15T10:30:00.000Z",
+                        "createdAt": "2024-01-16T10:30:00.000Z"
+                      }
+                    ],
+                    "pagination": {
+                      "page": 1,
+                      "limit": 20,
+                      "total": 45,
+                      "pages": 3
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/wallet/transactions": {
+      "get": {
+        "tags": ["Wallet"],
+        "summary": "Get transaction history",
+        "description": "Retrieve paginated transaction history (debits and credits) with filtering",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "walletType",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["account", "trading", "referral"]
+            }
+          },
+          {
+            "name": "transactionType",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["debit", "credit"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transaction history retrieved",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "transactions": [
+                      {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "walletType": "account",
+                        "transactionType": "credit",
+                        "amount": 100.50,
+                        "balanceAfter": 1500.75,
+                        "description": "Deposit confirmed",
+                        "createdAt": "2024-01-16T10:30:00.000Z"
+                      }
+                    ],
+                    "pagination": {
+                      "page": 1,
+                      "limit": 20,
+                      "total": 120,
+                      "pages": 6
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/wallet/locked": {
+      "get": {
+        "tags": ["Wallet"],
+        "summary": "View locked funds",
+        "description": "Get all locked funds with unlock dates and days remaining",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Locked funds retrieved",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "lockedFunds": [
+                      {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "fromWallet": "account",
+                        "toWallet": "trading",
+                        "amount": 100.50,
+                        "transferType": "principal",
+                        "lockedUntil": "2024-02-15T10:30:00.000Z",
+                        "daysRemaining": 25,
+                        "createdAt": "2024-01-16T10:30:00.000Z"
+                      }
+                    ],
+                    "summary": {
+                      "totalLocked": 1500.00,
+                      "principalLocked": 1000.00,
+                      "profitLocked": 500.00
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/wallet/users": {
+      "get": {
+        "tags": ["Admin Wallet"],
+        "summary": "List all users with wallet balances",
+        "description": "Get paginated list of all users with their wallet balances and locked amounts",
+        "security": [{"adminAuth": []}],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Users retrieved successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "users": [
+                      {
+                        "userId": "f1b210a3-16e4-42a1-8042-779e9a582470",
+                        "fullName": "John Doe",
+                        "email": "john@example.com",
+                        "wallets": {
+                          "account": {
+                            "balance": 1500.75,
+                            "locked": 500.00
+                          },
+                          "trading": {
+                            "balance": 2300.50,
+                            "locked": 1000.00
+                          },
+                          "referral": {
+                            "balance": 150.25,
+                            "locked": 0
+                          }
+                        },
+                        "totalBalance": 3951.50,
+                        "totalLocked": 1500.00
+                      }
+                    ],
+                    "pagination": {
+                      "page": 1,
+                      "limit": 50,
+                      "total": 250,
+                      "pages": 5
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - admin token required"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/wallet/users/{userId}": {
+      "get": {
+        "tags": ["Admin Wallet"],
+        "summary": "Get specific user wallet details",
+        "description": "Get detailed wallet information for a specific user including balances, locked funds, and recent transactions",
+        "security": [{"adminAuth": []}],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User wallet details retrieved",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "user": {
+                      "userId": "f1b210a3-16e4-42a1-8042-779e9a582470",
+                      "fullName": "John Doe",
+                      "email": "john@example.com"
+                    },
+                    "wallets": {
+                      "account": {
+                        "balance": 1500.75,
+                        "locked": 500.00
+                      },
+                      "trading": {
+                        "balance": 2300.50,
+                        "locked": 1000.00
+                      },
+                      "referral": {
+                        "balance": 150.25,
+                        "locked": 0
+                      }
+                    },
+                    "lockedFunds": [
+                      {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "amount": 100.50,
+                        "transferType": "principal",
+                        "lockedUntil": "2024-02-15T10:30:00.000Z",
+                        "daysRemaining": 25
+                      }
+                    ],
+                    "recentTransactions": [
+                      {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "walletType": "account",
+                        "transactionType": "credit",
+                        "amount": 100.50,
+                        "createdAt": "2024-01-16T10:30:00.000Z"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - admin token required"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/wallet/transfers": {
+      "get": {
+        "tags": ["Admin Wallet"],
+        "summary": "Get all transfers across platform",
+        "description": "Retrieve all wallet transfers with filtering and pagination",
+        "security": [{"adminAuth": []}],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["active", "unlocked", "cancelled"]
+            }
+          },
+          {
+            "name": "transferType",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["principal", "profit"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transfers retrieved successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "transfers": [
+                      {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "userId": "f1b210a3-16e4-42a1-8042-779e9a582470",
+                        "userName": "John Doe",
+                        "userEmail": "john@example.com",
+                        "fromWallet": "account",
+                        "toWallet": "trading",
+                        "amount": 100.50,
+                        "transferType": "principal",
+                        "status": "active",
+                        "lockedUntil": "2024-02-15T10:30:00.000Z",
+                        "createdAt": "2024-01-16T10:30:00.000Z"
+                      }
+                    ],
+                    "pagination": {
+                      "page": 1,
+                      "limit": 50,
+                      "total": 1250,
+                      "pages": 25
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - admin token required"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/wallet/locked": {
+      "get": {
+        "tags": ["Admin Wallet"],
+        "summary": "Get all locked funds across platform",
+        "description": "View all locked funds with user details and unlock dates",
+        "security": [{"adminAuth": []}],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "transferType",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["principal", "profit"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Locked funds retrieved",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "lockedFunds": [
+                      {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "userId": "f1b210a3-16e4-42a1-8042-779e9a582470",
+                        "userName": "John Doe",
+                        "userEmail": "john@example.com",
+                        "fromWallet": "account",
+                        "toWallet": "trading",
+                        "amount": 100.50,
+                        "transferType": "principal",
+                        "lockedUntil": "2024-02-15T10:30:00.000Z",
+                        "daysRemaining": 25,
+                        "createdAt": "2024-01-16T10:30:00.000Z"
+                      }
+                    ],
+                    "summary": {
+                      "totalLocked": 125000.00,
+                      "principalLocked": 100000.00,
+                      "profitLocked": 25000.00,
+                      "affectedUsers": 150
+                    },
+                    "pagination": {
+                      "page": 1,
+                      "limit": 50,
+                      "total": 450,
+                      "pages": 9
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - admin token required"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/wallet/stats": {
+      "get": {
+        "tags": ["Admin Wallet"],
+        "summary": "Get platform-wide wallet statistics",
+        "description": "Retrieve comprehensive statistics about all wallets, transfers, and locked funds across the platform",
+        "security": [{"adminAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Statistics retrieved successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "totalBalances": {
+                      "account": 150000.50,
+                      "trading": 250000.75,
+                      "referral": 25000.25,
+                      "total": 425001.50
+                    },
+                    "totalLocked": {
+                      "account": 50000.00,
+                      "trading": 75000.00,
+                      "referral": 0,
+                      "total": 125000.00
+                    },
+                    "transfers": {
+                      "total": 1250,
+                      "last24h": 45,
+                      "last7days": 320,
+                      "last30days": 1100
+                    },
+                    "lockedFunds": {
+                      "principal": 100000.00,
+                      "profit": 25000.00,
+                      "total": 125000.00,
+                      "affectedUsers": 150
+                    },
+                    "users": {
+                      "total": 250,
+                      "withBalance": 230,
+                      "withLockedFunds": 150
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - admin token required"
           }
         }
       }
