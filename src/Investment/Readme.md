@@ -41,3 +41,47 @@ deposit/
 | `dto/`         | Structures incoming/outgoing data contracts                 |
 | `utils/`       | Non-domain logic: parsing, formatting, network helpers      |
 | `config/`      | Centralized constants: min/max deposit, lock periods, etc.  |
+
+
+#walllet module 
+src/
+└─ modules/
+   └─ investment/
+      └─ wallet/
+         ├─ controllers/
+         │  └─ wallet.controller.js           # HTTP handlers (transfer A→T, T→A, R→A, balances, history)
+         │
+         ├─ routes/
+         │  └─ wallet.routes.js               # Express routes; attach auth middleware; mount under /api/v1/wallet
+         │
+         ├─ services/
+         │  ├─ wallet.service.js              # Core balance ops: row locks, atomic updates, ledger writes
+         │  ├─ transfer.service.js            # High-level flows: account→trading, trading→account, referral→account
+         │  ├─ validation.service.js          # Business-rule checks (min $10, locked principal, sufficient funds)
+         │  ├─ notification.service.js        # Email/SMS hooks (async fire-and-forget after commit)
+         │  └─ audit.service.js               # Structured audit logs for admin/compliance
+         │
+         ├─ validations/
+         │  └─ wallet.validation.js           # Request schemas (Zod/Joi): amount, wallet types, idempotency key
+         │
+         ├─ dto/
+         │  └─ wallet.dto.js                  # Response shapes: balances, transfer result, errors (UX-friendly)
+         │
+         ├─ policies/
+         │  └─ wallet.policy.js               # Centralized rules: allowed flows, lock duration, min amounts
+         │
+         ├─ jobs/
+         │  └─ walletUnlock.job.js            # Daily unlock of matured principal (reduces trading.locked_balance)
+         │
+         ├─ utils/
+         │  └─ wallet.utils.js                # Small helpers: money math (2dp), dates, idempotency key helpers
+         │
+         ├─ config/
+         │  └─ wallet.config.js               # Read env: LOCK_DAYS=30, MIN_TRADE_USD=10, notify toggles, etc.
+         │
+         ├─ index.js                          # Module composer: wires services, routes; exports router/factory
+         │
+         └─ tests/
+            ├─ wallet.service.test.js         # Unit tests: concurrency, idempotency, invariants
+            ├─ transfer.flows.test.js         # Flow tests: A→T, T→A (profits only), R→A, edge cases
+            └─ routes.wallet.test.js          # Integration tests: HTTP layer with auth stub

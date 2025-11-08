@@ -23,7 +23,7 @@ const { createDepositRouter } = require("./Investment/src/modules/deposit/routes
 const { createAdminDepositRouter } = require("./Investment/src/modules/deposit/routes/adminDeposit.routes");
 const { DepositService } = require("./Investment/src/modules/deposit/services/deposit.service");
 const { BinanceProvider } = require("./Investment/src/modules/deposit/providers/binance.provider");
-const { WalletService } = require("./Investment/src/wallet/wallet.service");
+const { WalletService } = require("./Investment/src/modules/wallet/services/wallet.service");
 const { AdminDepositSyncJob } = require("./Investment/src/modules/deposit/jobs/adminDepositSync.job");
 
 // ── Auth middlewares (protect routes)
