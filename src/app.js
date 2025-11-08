@@ -26,6 +26,15 @@ const { BinanceProvider } = require("./Investment/src/modules/deposit/providers/
 const { WalletService } = require("./Investment/src/modules/wallet/services/wallet.service");
 const { AdminDepositSyncJob } = require("./Investment/src/modules/deposit/jobs/adminDepositSync.job");
 
+// ── Wallet module
+const { createWalletRouter } = require("./Investment/src/modules/wallet/routes/wallet.routes");
+const { createAdminWalletRouter } = require("./Investment/src/modules/wallet/routes/adminWallet.routes");
+const { TransferService } = require("./Investment/src/modules/wallet/services/transfer.service");
+const { NotificationService } = require("./Investment/src/modules/wallet/services/notification.service");
+const { AuditService } = require("./Investment/src/modules/wallet/services/audit.service");
+const { WalletUnlockJob } = require("./Investment/src/modules/wallet/jobs/walletUnlock.job");
+
+
 // ── Auth middlewares (protect routes)
 const { authenticate } = require("./authentication/src/middleware/auth.middleware");
 const { adminAuthenticate } = require("./authentication/src/middleware/admin/adminAuth.middleware");
@@ -159,6 +168,70 @@ const createApp = () => {
     app.use("/api/v1/admin/deposits", adminDepositRouter);
   }
 
+  function setupWalletModule() {
+    const withTransaction = async (fn) => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const result = await fn(client);
+        await client.query("COMMIT");
+        return result;
+      } catch (e) {
+        await client.query("ROLLBACK");
+        throw e;
+      } finally {
+        client.release();
+      }
+    };
+
+    const walletService = new WalletService({ db: pool, withTransaction });
+    const notificationService = new NotificationService({ db: pool, logger: console });
+    const auditService = new AuditService({ db: pool, logger: console });
+
+    const transferService = new TransferService({
+      db: pool,
+      walletService,
+      notificationService,
+      auditService,
+      withTransaction,
+      logger: console,
+    });
+
+    // User wallet routes
+    const walletRouter = createWalletRouter({
+      transferService,
+      walletService,
+      authenticate,
+      logger: console,
+    });
+
+    // Admin wallet routes
+    const adminWalletRouter = createAdminWalletRouter({
+      walletService,
+      adminAuthenticate,
+      logger: console,
+    });
+
+    // Start wallet unlock cron job (runs every 5 minutes)
+    const unlockJob = new WalletUnlockJob({
+      db: pool,
+      walletService,
+      logger: console,
+    });
+    unlockJob.start();
+    container.jobs.walletUnlock = unlockJob;
+    console.log('[INFO] WalletUnlockJob started (runs every 5 minutes)');
+
+    container.services.walletService = walletService;
+    container.services.transferService = transferService;
+    container.services.notificationService = notificationService;
+    container.services.auditService = auditService;
+
+    app.use("/api/v1/wallet", walletRouter);
+    app.use("/api/v1/admin/wallet", adminWalletRouter);
+  }
+
+
   function setupRoutes() {
     // Docs & health
     app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
@@ -174,6 +247,8 @@ const createApp = () => {
 
     // Deposit module
     setupDepositModule();
+    // Wallet module
+    setupWalletModule();
   }
 
   function notFoundHandler(req, res) {

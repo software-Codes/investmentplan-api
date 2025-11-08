@@ -25,7 +25,9 @@ function isTransferAllowed(from, to) {
 module.exports = {
     WALLET_TYPES,
     isTransferAllowed,
-    LOCK_DAYS: cfg.LOCK_DAYS,
+    PRINCIPAL_LOCK_DAYS: cfg.PRINCIPAL_LOCK_DAYS,
+    PROFIT_LOCK_DAYS: cfg.PROFIT_LOCK_DAYS,
     MIN_TRADE_USD: cfg.MIN_TRADE_USD,
+    MIN_PROFIT_WITHDRAWAL: cfg.MIN_PROFIT_WITHDRAWAL,
     NOTIFY_ENABLED: cfg.NOTIFY_ENABLED,
 };

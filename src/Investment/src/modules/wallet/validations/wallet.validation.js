@@ -21,17 +21,18 @@ const AmountSchema = z
  * POST /wallet/transfer  body validation
  */
 const TransferBodySchema = z.object({
-    from: WalletTypeSchema,
-    to: WalletTypeSchema,
+    fromWallet: WalletTypeSchema,
+    toWallet: WalletTypeSchema,
     amount: AmountSchema,
+    transferType: z.enum(['principal', 'profit']).optional(),
     idempotencyKey: z.string().trim().max(64).optional(),
 }).superRefine((data, ctx) => {
     // business-rule checks
-    if (!isTransferAllowed(data.from, data.to)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'ERR_FLOW_NOT_ALLOWED', path: ['from'] });
+    if (!isTransferAllowed(data.fromWallet, data.toWallet)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'ERR_FLOW_NOT_ALLOWED', path: ['fromWallet'] });
     }
     // min trade for account→trading
-    if (data.from === 'account' && data.to === 'trading' && data.amount < MIN_TRADE_USD) {
+    if (data.fromWallet === 'account' && data.toWallet === 'trading' && data.amount < MIN_TRADE_USD) {
         ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message: `ERR_MIN_TRADE_${MIN_TRADE_USD}`,
@@ -41,7 +42,15 @@ const TransferBodySchema = z.object({
 });
 
 function validateTransferBody(body) {
-    return TransferBodySchema.parse(body);
+    const validated = TransferBodySchema.parse(body);
+    // Map to internal field names
+    return {
+        from: validated.fromWallet,
+        to: validated.toWallet,
+        amount: validated.amount,
+        transferType: validated.transferType,
+        idempotencyKey: validated.idempotencyKey
+    };
 }
 
 module.exports = { validateTransferBody, TransferBodySchema };

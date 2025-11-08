@@ -29,6 +29,26 @@ module.exports = new EntitySchema({
       scale: 2,
       nullable: false
     },
+    transfer_type: {
+      type: 'enum',
+      enum: ['principal', 'profit'],
+      default: 'principal',
+      nullable: false
+    },
+    locked_until: {
+      type: 'timestamptz',
+      nullable: true
+    },
+    unlocked_at: {
+      type: 'timestamptz',
+      nullable: true
+    },
+    status: {
+      type: 'enum',
+      enum: ['active', 'unlocked', 'cancelled'],
+      default: 'active',
+      nullable: false
+    },
     created_at: {
       type: 'timestamptz',
       createDate: true
